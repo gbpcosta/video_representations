@@ -24,7 +24,7 @@ from models_lstm import def_lstm_large_video_ae, def_lstm_small_video_ae
 from models_gru import def_gru_large_video_ae, def_gru_small_video_ae
 
 from bouncingMNIST import BouncingMNISTDataGenerator
-from utils import plot_metrics
+from utils import plot_metrics, get_labels, SVMEval
 
 tl = tf.layers
 
@@ -60,6 +60,7 @@ class VideoRep():
         self.dataset_name = dataset_name
         self.tr_size = tr_size
         self.val_size = val_size
+        self.n_classes = 10
 
         self.use_batch_norm = use_batch_norm
         self.use_layer_norm = use_layer_norm
@@ -145,6 +146,10 @@ class VideoRep():
         if self.current_epoch == 1:
             self.plt_loss = np.array([])
             self.val_loss = np.array([])
+            self.val_auc = np.array([]) \
+                .reshape(0, self.n_classes)
+            self.val_acc = np.array([]) \
+                .reshape(0, self.n_classes)
 
     def _get_model_name(self):
         # return 'semantic_nn_{}_ae_{}_{}emb_{}epoch_{}' \
@@ -188,10 +193,11 @@ class VideoRep():
 
             return optim
 
-    def _def_svm_clf():
-        pass
+    def _def_svm_clf(self):
+        self.svm = SVMEval(tr_size=self.tr_size, val_size=self.val_size,
+                           n_splits=5, scale=False, per_class=True)
 
-    def _def_metrics():
+    def _def_metrics(self):
         if self.is_ae is True:
             pass
         else:
@@ -423,7 +429,8 @@ class VideoRep():
                                            reuse=True)
 
         self._def_loss_fn()
-        self._def_metrics()
+        self._def_svm_clf()
+        # self._def_metrics()
         self.optim = self._def_optimizer()
 
     def train_model(self):
@@ -436,14 +443,18 @@ class VideoRep():
 
         for epoch in tqdm(range(starting_epoch, self.epoch+1), position=1):
             # Training
+            tr_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.emb_dim)
+            tr_labels = np.array([], dtype=np.float32) \
+                .reshape(0, 10)
             for batch_number in tqdm(range(1, self.num_batches+1),
                                      position=0):
                 video_batch, labels = \
                     self.training_generator.get_batch()
 
-                _, _, _, loss, acc, auc, net_out = \
-                    self.sess.run([self.optim, self.acc_op, self.auc_op,
-                                   self.loss, self.acc, self.auc,
+                _, loss, net_out = \
+                    self.sess.run([self.optim,  # self.acc_op, self.auc_op,
+                                   self.loss,  # self.acc, self.auc,
                                    self.net_out],
                                   feed_dict={self.video: video_batch,
                                              self.labels: labels})
@@ -456,6 +467,20 @@ class VideoRep():
                              loss))
 
                 self.plt_loss = np.append(self.plt_loss, loss)
+
+                if self.use_batch_norm is True:
+                    video_emb = \
+                        self.sess.run(self.test_video_emb,
+                                      feed_dict={self.test_video: video_batch,
+                                                 self.test_labels: labels})
+                else:
+                    video_emb = \
+                        self.sess.run(self.video_emb,
+                                      feed_dict={self.video: video_batch,
+                                                 self.labels: labels})
+
+                tr_video_emb = np.vstack([tr_video_emb, video_emb])
+                tr_labels = np.vstack([tr_labels, labels])
 
             # Validation and Visualization
             val_video_emb = np.array([], dtype=np.float32) \
@@ -485,19 +510,34 @@ class VideoRep():
                 val_labels = np.vstack([val_labels, labels])
             self.validation_generator.on_epoch_end()
 
-            def get_labels(one_hot_labels, n_labels=2):
-                labels = [np.nonzero(one_hot_labels[ii, :])[0]
-                          for ii in range(one_hot_labels.shape[0])]
-                labels = [np.repeat(labels[ii], n_labels).reshape(1, -1)
-                          if labels[ii].shape[0] < n_labels
-                          else labels[ii].reshape(1, -1)
-                          for ii in range(len(labels))]
-
-                return np.concatenate(labels, axis=0)
-
             if epoch % self.vis_epoch == 0 or \
                     epoch == 1 or \
                     epoch == self.epoch:
+
+                val_acc, val_auc, valid_classes = \
+                    self.svm.compute(train_data=(tr_video_emb, tr_labels),
+                                     val_data=(val_video_emb, val_labels))
+                self.val_acc = np.vstack([self.val_acc, val_acc])
+                self.val_auc = np.vstack([self.val_auc, val_auc])
+
+                plt_acc = []
+                plt_auc = []
+                metrics_it_list = []
+                acc_plt_names = []
+                auc_plt_names = []
+                metrics_plt_types = []
+                for cl in range(self.n_classes):
+                    plt_acc.append(self.val_acc[:, cl])
+                    plt_auc.append(self.val_auc[:, cl])
+                    metrics_it_list.append(list(range(0,
+                                                      self.current_epoch,
+                                                      self.vis_epoch)))
+                    metrics_plt_types.append('lines')
+                    acc_plt_names.append('Validation Accuracy (SVM) - '
+                                         'Class {}'.format(cl))
+                    auc_plt_names.append('Validation ROC AUC (SVM) - '
+                                         'Class {}'.format(cl))
+
                 val_labels_n = get_labels(val_labels)
                 label1 = val_labels_n[:, 0].reshape((-1, 1))
                 label2 = val_labels_n[:, 1].reshape((-1, 1))
@@ -547,7 +587,8 @@ class VideoRep():
                                        None, None, None, None,
                                        None, None, None,
                                        None, None, None]
-                    plt_types = ['lines', 'scatter', 'scatter',
+                    plt_types = ['lines',
+                                 'scatter', 'scatter',
                                  'scatter', 'scatter', 'scatter',
                                  'scatter', 'image-grid', 'image-grid',
                                  'image-grid', 'image-grid']
@@ -595,6 +636,32 @@ class VideoRep():
                     # y_label='Loss',
                     savefile=os.path.join(self.plt_dir,
                                           'metrics_epoch{}.png'
+                                          .format(epoch)),
+                    bot=self.bot)
+
+                plot_metrics(
+                    metrics_list=plt_acc,
+                    iterations_list=metrics_it_list,
+                    types=metrics_plt_types,
+                    metric_names=acc_plt_names,
+                    legend=True,
+                    # x_label='Iteration',
+                    # y_label='Loss',
+                    savefile=os.path.join(self.plt_dir,
+                                          'acc_epoch{}.png'
+                                          .format(epoch)),
+                    bot=self.bot)
+
+                plot_metrics(
+                    metrics_list=plt_auc,
+                    iterations_list=metrics_it_list,
+                    types=metrics_plt_types,
+                    metric_names=auc_plt_names,
+                    legend=True,
+                    # x_label='Iteration',
+                    # y_label='Loss',
+                    savefile=os.path.join(self.plt_dir,
+                                          'auc_epoch{}.png'
                                           .format(epoch)),
                     bot=self.bot)
 
@@ -646,6 +713,20 @@ class VideoRep():
                                          'plt_loss_bkup.h5'),
                             'val_loss',
                             append=True, format='table')
+
+                pd.DataFrame(
+                    self.plt_acc[-1]).to_hdf(
+                        os.path.join(self.model_dir,
+                                     'plt_loss_bkup.h5'),
+                        'val_loss',
+                        append=True, format='table')
+
+                pd.DataFrame(
+                    self.plt_auc[-1]).to_hdf(
+                        os.path.join(self.model_dir,
+                                     'plt_loss_bkup.h5'),
+                        'val_loss',
+                        append=True, format='table')
 
             self.training_generator.on_epoch_end()
             self.current_epoch += 1

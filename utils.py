@@ -1,6 +1,10 @@
 import os
 import numpy as np
 
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
+from sklearn.preprocessing import StandardScaler, label_binarize
+
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.cm as cm
@@ -151,3 +155,96 @@ def plot_metrics(metrics_list, iterations_list, types, savefile,
 
     if bot is not None:
         bot.send_file(savefile)
+
+
+def get_labels(one_hot_labels, n_labels=2):
+    labels = [np.nonzero(one_hot_labels[ii, :])[0]
+              for ii in range(one_hot_labels.shape[0])]
+    labels = [np.repeat(labels[ii], n_labels).reshape(1, -1)
+              if labels[ii].shape[0] < n_labels
+              else labels[ii].reshape(1, -1)
+              for ii in range(len(labels))]
+
+    return np.concatenate(labels, axis=0)
+
+
+class SVMEval():
+    """
+    Based on:
+    https://github.com/leosampaio/keras-generative/blob/master/metrics/svm.py
+    """
+    def __init__(self, tr_size, val_size, n_splits=5,
+                 scale=False, per_class=True):
+        self.tr_size = tr_size
+        self.val_size = val_size
+        self.n_splits = n_splits
+        self.param_grid = [{'C': [1e1, 1e2, 1e-1]}]
+        self.scale = scale
+        self.per_class = per_class
+
+    def compute(self, train_data, val_data):
+        x_train, y_train = train_data
+        x_test, y_test = val_data
+
+        valid_classes = np.unique(get_labels(y_train))
+
+        if self.scale is True:
+            scaler = StandardScaler()
+            x_train = scaler.fit_transform(x_train)
+            x_test = scaler.transform(x_test)
+
+        if self.per_class is True:
+            y_train = label_binarize(y_train, classes=list(valid_classes))
+            y_test = label_binarize(y_test, classes=list(valid_classes))
+
+            val_acc = []
+            val_auc = []
+            for cl in range(len(valid_classes)):
+                aux_acc = []
+                aux_auc = []
+                if self.n_splits > 1:
+                    grid = GridSearchCV(SVC(decision_function_shape='ovr'),
+                                        param_grid=
+                                        [{'C': [1, 10, 100, 1000],
+                                          'kernel': ['linear']}],
+                                        cv=self.n_splits,
+                                        scoring='accuracy', n_jobs=6)
+                    grid.fit(X=x_train, y=y_train[:, cl])
+                    acc_on_val = grid.score(x_test, y_test[:, cl])
+                else:
+                    raise NotImplementedError
+                aux_acc.append(acc_on_val)
+
+                if self.n_splits > 1:
+                    grid = GridSearchCV(SVC(decision_function_shape='ovr'),
+                                        param_grid=
+                                        [{'C': [1, 10, 100, 1000],
+                                          'kernel': ['linear']}],
+                                        cv=self.n_splits,
+                                        scoring='roc_auc', n_jobs=6)
+                    grid.fit(X=x_train, y=y_train[:, cl])
+                    auc_on_val = grid.score(x_test, y_test[:, cl])
+                else:
+                    raise NotImplementedError
+                aux_auc.append(auc_on_val)
+
+                val_acc.append(np.mean(aux_acc))
+                val_auc.append(np.mean(aux_auc))
+
+            return val_acc, val_auc, valid_classes
+
+        else:
+            val_acc = []
+            if self.n_splits > 1:
+                grid = GridSearchCV(SVC(decision_function_shape='ovr'),
+                                    param_grid=[{'C': [1, 10, 100, 1000],
+                                                 'kernel': ['linear']}],
+                                    cv=self.n_splits,
+                                    scoring='accuracy', n_jobs=6)
+                grid.fit(X=x_train, y=y_train)
+                score_on_val = grid.score(x_test, y_test)
+            else:
+                raise NotImplementedError
+            val_acc.append(score_on_val)
+
+            return np.mean(val_acc)
