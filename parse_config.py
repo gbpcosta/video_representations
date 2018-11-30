@@ -40,7 +40,8 @@ def parse_args():
                                    'c3d_ae_large', 'c3d_clf_large',
                                    'lstm_ae_small', 'lstm_ae_large',
                                    'gru_ae_small', 'gru_ae_large',
-                                   'p3d_ae_small', 'p3d_ae_large'],
+                                   'p3d_ae_small', 'p3d_ae_large',
+                                   'r21d_clf_small', 'r21d_clf_large'],
                           help='Architecture type used for the network',
                           required=True)
 
@@ -70,11 +71,15 @@ def parse_args():
     parser_b.add_argument('--learning_rate', type=np.float32, default=10e-4,
                           help='Learning rate used for the optimizer')
 
-
-    # VISUALIZATION
+    # VISUALIZATION & ANALYSIS
+    parser_b.add_argument('--svm_analysis', action='store_true',
+                          help='Activates svm analysis on embedding space')
     parser_b.add_argument('--vis_epoch', type=np.int64, default=10,
                           help='Number of epochs before computing and plotting'
                                ' evaluation metrics and visualizations')
+    parser_b.add_argument('--plot_individually', action='store_true',
+                          help='Creates a separate plot for each metric/'
+                               'visualization.')
     parser_b.add_argument('-v', '--verbosity',
                           action='count', default=0,
                           help='Controls output verbosity')
@@ -137,7 +142,9 @@ def read_config_file(path):
                    'epoch': 100,
                    'batch_size': 32,
                    'learning_rate': 10e-4,
+                   'svm_analysis': False,
                    'vis_epoch': 10,
+                   'plot_individually': False,
                    'verbosity': 0,
                    'checkpoint_epoch': 10,
                    'keep_checkpoint_max': 1,
@@ -204,10 +211,18 @@ def read_config_file(path):
                                                'TRAINING',
                                                'learning_rate')
 
-                # VISUALIZATION
+                # VISUALIZATION & ANALYSIS
+                self.svm_analysis = \
+                    parse_value_or_get_default(config.getboolean,
+                                               'VISUALIZATION',
+                                               'svm_analysis')
                 self.vis_epoch = parse_value_or_get_default(config.getint,
                                                             'VISUALIZATION',
                                                             'vis_epoch')
+                self.plot_individually = \
+                    parse_value_or_get_default(config.getboolean,
+                                               'VISUALIZATION',
+                                               'plot_individually')
                 self.verbosity = parse_value_or_get_default(config.getint,
                                                             'VISUALIZATION',
                                                             'verbosity')
@@ -262,7 +277,9 @@ def read_config_file(path):
                 self.learning_rate = args.learning_rate
 
                 # VISUALIZATION
+                self.svm_analysis = args.svm_analysis
                 self.vis_epoch = args.vis_epoch
+                self.plot_individually = self.plot_individually
                 self.verbosity = args.verbosity
 
                 # CHECKPOINT
@@ -302,8 +319,11 @@ def read_config_file(path):
                                        'batch_size': self.batch_size,
                                        'learning_rate': self.learning_rate}
 
-            self.config['VISUALIZATION'] = {'vis_epoch': self.vis_epoch,
-                                            'verbosity': self.verbosity}
+            self.config['VISUALIZATION'] = \
+                {'svm_analysis': self.svm_analysis,
+                 'vis_epoch': self.vis_epoch,
+                 'plot_individually': self.plot_individually,
+                 'verbosity': self.verbosity}
 
             self.config['CHECKPOINT'] = \
                 {'checkpoint_epoch': self.checkpoint_epoch,
@@ -334,12 +354,14 @@ def check_args(args):
                                'c3d_ae_large', 'c3d_clf_large',
                                'lstm_ae_small',
                                'lstm_ae_large', 'gru_ae_small', 'gru_ae_large',
-                               'p3d_ae_small', 'p3d_ae_large'], \
+                               'p3d_ae_small', 'p3d_ae_large',
+                               'r21d_clf_small', 'r21d_clf_large'], \
         'invalid model_type. model_type must be one of the following: ' \
         'c3d_ae_small, c3d_ae_large, ' \
         'lstm_ae_small, lstm_ae_large, ' \
-        'gru_ae_small, gru_ae_large,' \
-        'p3d_ae_small, p3d_ae_large.'
+        'gru_ae_small, gru_ae_large, ' \
+        'p3d_ae_small, p3d_ae_large, ' \
+        'r21d_clf_small, r21d_clf_large.'
 
     # DATASET
     assert args.dataset_name in ['bouncingMNIST'], \

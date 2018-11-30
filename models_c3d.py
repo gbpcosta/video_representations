@@ -5,7 +5,7 @@ tl = tf.layers
 def def_c3d_small_video_ae(input, is_training=True, reuse=False,
                            use_l2_reg=False,
                            use_batch_norm=False, use_layer_norm=False,
-                           video_ae_emb_layer_name='video_ae_emb_layer'):
+                           video_emb_layer_name='video_ae_emb_layer'):
     """ VIDEO AE """
 
     if use_l2_reg:
@@ -86,7 +86,7 @@ def def_c3d_small_video_ae(input, is_training=True, reuse=False,
     # flatten_output -> (batch_size, features)
     #                   (32,         2048    )
 
-    with tf.variable_scope(video_ae_emb_layer_name, reuse=reuse) as vs2:
+    with tf.variable_scope(video_emb_layer_name, reuse=reuse) as vs2:
         """ CODE """
         video_ae_emb = tl.dense(inputs=video_ae_en,
                                 units=1024,
@@ -220,7 +220,7 @@ def def_c3d_large_video_ae(input, is_training=True, reuse=False,
                            use_l2_reg=False,
                            use_batch_norm=False, use_layer_norm=False,
                            use_dropout=True,
-                           video_ae_emb_layer_name='video_ae_emb_layer'):
+                           video_emb_layer_name='video_ae_emb_layer'):
     """ VIDEO AE """
 
     if use_l2_reg:
@@ -322,7 +322,7 @@ def def_c3d_large_video_ae(input, is_training=True, reuse=False,
     # flatten_output -> (batch_size, features)
     #                   (32,         2048    )
 
-    with tf.variable_scope(video_ae_emb_layer_name, reuse=reuse) as vs2:
+    with tf.variable_scope(video_emb_layer_name, reuse=reuse) as vs2:
         """ CODE """
         video_ae_emb = tl.dense(inputs=video_ae_en,
                                 units=2048,
@@ -457,7 +457,7 @@ def def_c3d_small_video_classifier(
         input, is_training=True, reuse=False,
         use_l2_reg=False,
         use_batch_norm=False, use_layer_norm=False, use_dropout=True,
-        video_ae_emb_layer_name='clf_fc5'):
+        video_emb_layer_name='clf_fc5'):
 
     if use_l2_reg:
         regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
@@ -472,7 +472,7 @@ def def_c3d_small_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv1')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -489,7 +489,7 @@ def def_c3d_small_video_classifier(
                                      strides=(1, 2, 2),
                                      padding='valid',
                                      name='clf_pool1')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
     # pool1_output -> (batch_size, n_frames, img_size, img_size, n_channels)
@@ -501,7 +501,7 @@ def def_c3d_small_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv2')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -518,7 +518,7 @@ def def_c3d_small_video_classifier(
                                      strides=(2, 2, 2),
                                      padding='valid',
                                      name='clf_pool2')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -531,7 +531,7 @@ def def_c3d_small_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv3')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -550,7 +550,7 @@ def def_c3d_small_video_classifier(
                                      padding='valid',
                                      name='clf_pool3')
 
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
     # pool3_output -> (batch_size, n_frames, img_size, img_size, n_channels)
@@ -561,7 +561,7 @@ def def_c3d_small_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv4')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -579,7 +579,7 @@ def def_c3d_small_video_classifier(
                                      strides=(2, 2, 2),
                                      padding='valid',
                                      name='clf_pool4')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -588,7 +588,7 @@ def def_c3d_small_video_classifier(
 
         video_clf = tl.flatten(inputs=video_clf,
                                name='clf_flatten')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -601,7 +601,7 @@ def def_c3d_small_video_classifier(
                              activation=tf.nn.relu,
                              kernel_regularizer=regularizer,
                              name='clf_fc5')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -616,7 +616,7 @@ def def_c3d_small_video_classifier(
                                         activation=None,
                                         kernel_regularizer=regularizer,
                                         name='clf_fc6')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf_out_logits)
             emb_dim = int(video_emb.shape[1])
 
@@ -632,7 +632,7 @@ def def_c3d_large_video_classifier(
         input, is_training=True, reuse=False,
         use_l2_reg=False,
         use_batch_norm=False, use_layer_norm=False, use_dropout=True,
-        video_ae_emb_layer_name='clf_fc6'):
+        video_emb_layer_name='clf_fc6'):
 
     if use_l2_reg:
         regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
@@ -647,7 +647,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv1')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -664,7 +664,7 @@ def def_c3d_large_video_classifier(
                                      strides=(1, 2, 2),
                                      padding='valid',
                                      name='clf_pool1')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
     # pool1_output -> (batch_size, n_frames, img_size, img_size, n_channels)
@@ -676,7 +676,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv2')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -693,7 +693,7 @@ def def_c3d_large_video_classifier(
                                      strides=(2, 2, 2),
                                      padding='valid',
                                      name='clf_pool2')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -706,7 +706,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv3a')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -726,7 +726,7 @@ def def_c3d_large_video_classifier(
                               kernel_regularizer=regularizer,
                               name='clf_conv3b')
 
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -745,7 +745,7 @@ def def_c3d_large_video_classifier(
                                      padding='valid',
                                      name='clf_pool3')
 
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
     # pool3_output -> (batch_size, n_frames, img_size, img_size, n_channels)
@@ -756,7 +756,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv4a')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -775,7 +775,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv4b')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -792,7 +792,7 @@ def def_c3d_large_video_classifier(
                                      strides=(2, 2, 2),
                                      padding='valid',
                                      name='clf_pool4')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -805,7 +805,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv5a')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -824,7 +824,7 @@ def def_c3d_large_video_classifier(
                               activation=tf.nn.relu,
                               kernel_regularizer=regularizer,
                               name='clf_conv5b')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -841,7 +841,7 @@ def def_c3d_large_video_classifier(
                                      strides=(2, 2, 2),
                                      padding='valid',
                                      name='clf_pool5')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -850,7 +850,7 @@ def def_c3d_large_video_classifier(
 
         video_clf = tl.flatten(inputs=video_clf,
                                name='clf_flatten')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -863,7 +863,7 @@ def def_c3d_large_video_classifier(
                              kernel_regularizer=regularizer,
                              name='clf_fc6')
 
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -878,7 +878,7 @@ def def_c3d_large_video_classifier(
                              activation=tf.nn.relu,
                              kernel_regularizer=regularizer,
                              name='clf_fc7')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf)
             emb_dim = int(video_emb.shape[1])
 
@@ -893,7 +893,7 @@ def def_c3d_large_video_classifier(
                                         activation=None,
                                         kernel_regularizer=regularizer,
                                         name='clf_fc8')
-        if video_ae_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf_out_logits)
             emb_dim = int(video_emb.shape[1])
 
