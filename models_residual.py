@@ -9,7 +9,12 @@ BLOCK_CONFIG = {
     16: (2, 2, 2, 1),
     18: (2, 2, 2, 2),
     26: (2, 3, 4, 3),
-    34: (3, 4, 6, 3),
+    34: (3, 4, 6, 3)
+}
+
+N_FILTERS = {
+    'small': (32, 32, 64, 64, 128),
+    'large': (64, 64, 128, 256, 512)
 }
 
 
@@ -270,19 +275,19 @@ class VideoModelBuilder():
             return prev_blob
 
 
-# 3d or (2+1)d resnets, input 3 x t*8 x 112 x 112
-# the final conv output is 512 * t * 7 * 7
-def def_r3d(input, num_labels, is_training=True,
+# 3d or (2+1)d resnets
+def def_r3d(input, n_classes, is_training=True, is_multilabel=False,
             final_spatial_kernel=7, final_temporal_kernel=1,
-            model_depth=18, padding='same', is_decomposed=False,
-            verbosity=0, reuse=False, video_emb_layer_name='res7'):
+            model_depth=18, model_size='large', padding='same',
+            is_decomposed=False, verbosity=0, reuse=False,
+            video_emb_layer_name='res7'):
 
     with tf.variable_scope('video_classifier', reuse=reuse) as vs:
         # conv1 + maxpool
         if not is_decomposed:
             prev_blob = tl.conv3d(
                 inputs=input,
-                filters=64,
+                filters=N_FILTERS[model_size][0],
                 kernel_size=(3, 7, 7),
                 strides=(1, 2, 2),
                 padding=padding,
@@ -292,9 +297,17 @@ def def_r3d(input, num_labels, is_training=True,
                 name='conv1',
                 reuse=reuse)
         else:
+            i = 3 * int(input.shape[-1]) * N_FILTERS[model_size][0] * 7 * 7
+            i /= int(input.shape[-1]) * 7 * 7 + 3 * N_FILTERS[model_size][0]
+            middle_filters = int(i)
+
+            if verbosity >= 2:
+                print("Number of middle filters: "
+                      "{}".format(middle_filters))
+
             prev_blob = tl.conv3d(
                 inputs=input,
-                filters=45,
+                filters=middle_filters,
                 kernel_size=(1, 7, 7),
                 strides=(1, 2, 2),
                 padding=padding,
@@ -315,7 +328,7 @@ def def_r3d(input, num_labels, is_training=True,
 
             prev_blob = tl.conv3d(
                 inputs=prev_blob,
-                filters=64,
+                filters=N_FILTERS[model_size][0],
                 kernel_size=(3, 1, 1),
                 strides=(1, 1, 1),
                 padding=padding,
@@ -346,7 +359,7 @@ def def_r3d(input, num_labels, is_training=True,
         # conv_2x
         for ii in range(n1):
             prev_blob = builder.add_simple_block(
-                input=prev_blob, filters=64,
+                input=prev_blob, filters=N_FILTERS[model_size][1],
                 is_decomposed=is_decomposed, is_real_3d=True,
                 padding=padding)
             # print('n1 %d: ' % ii, prev_blob.name.split('/'))
@@ -357,7 +370,8 @@ def def_r3d(input, num_labels, is_training=True,
 
         # conv_3x
         prev_blob = builder.add_simple_block(
-            input=prev_blob, filters=128, down_sampling=True,
+            input=prev_blob, filters=N_FILTERS[model_size][2],
+            down_sampling=True,
             is_decomposed=is_decomposed, padding=padding)
 
         if video_emb_layer_name == prev_blob.name.split('/')[-2]:
@@ -366,7 +380,7 @@ def def_r3d(input, num_labels, is_training=True,
 
         for ii in range(n2 - 1):
             prev_blob = builder.add_simple_block(
-                input=prev_blob, filters=128,
+                input=prev_blob, filters=N_FILTERS[model_size][2],
                 is_decomposed=is_decomposed,
                 padding=padding)
             # print('n2 %d: ' % ii, prev_blob.name.split('/'))
@@ -377,7 +391,8 @@ def def_r3d(input, num_labels, is_training=True,
 
         # conv_4x
         prev_blob = builder.add_simple_block(
-            input=prev_blob, filters=256, down_sampling=True,
+            input=prev_blob, filters=N_FILTERS[model_size][3],
+            down_sampling=True,
             is_decomposed=is_decomposed, padding=padding)
 
         if video_emb_layer_name == prev_blob.name.split('/')[-2]:
@@ -386,7 +401,7 @@ def def_r3d(input, num_labels, is_training=True,
 
         for ii in range(n3 - 1):
             prev_blob = builder.add_simple_block(
-                input=prev_blob, filters=256,
+                input=prev_blob, filters=N_FILTERS[model_size][3],
                 is_decomposed=is_decomposed,
                 padding=padding)
             # print('n3 %d: ' % ii, prev_blob.name.split('/'))
@@ -397,7 +412,8 @@ def def_r3d(input, num_labels, is_training=True,
 
         # conv_5x
         prev_blob = builder.add_simple_block(
-            input=prev_blob, filters=512, down_sampling=True,
+            input=prev_blob, filters=N_FILTERS[model_size][4],
+            down_sampling=True,
             is_decomposed=is_decomposed, padding=padding)
 
         # print('n4: ', prev_blob.name.split('/')[-2], video_emb_layer_name)
@@ -407,7 +423,7 @@ def def_r3d(input, num_labels, is_training=True,
 
         for ii in range(n4 - 1):
             prev_blob = builder.add_simple_block(
-                input=prev_blob, filters=512,
+                input=prev_blob, filters=N_FILTERS[model_size][4],
                 is_decomposed=is_decomposed,
                 padding=padding)
             # print('n4 %d: ' % ii, prev_blob.name.split('/'))
@@ -431,9 +447,18 @@ def def_r3d(input, num_labels, is_training=True,
         final_avg = tl.flatten(inputs=final_avg,
                                name='flatten')
 
-        video_clf_out_logits = tl.dense(inputs=final_avg, units=num_labels,
-                                        activation=None, name='softmax',
-                                        reuse=reuse)
+        if is_multilabel is True:
+            video_clf_out_logits = tl.dense(inputs=final_avg,
+                                            units=2*n_classes,
+                                            activation=None, name='softmax',
+                                            reuse=reuse)
+            video_clf_out_logits = tf.reshape(video_clf_out_logits,
+                                              (-1, n_classes, 2))
+        else:
+            video_clf_out_logits = tl.dense(inputs=final_avg,
+                                            units=n_classes,
+                                            activation=None, name='softmax',
+                                            reuse=reuse)
         video_clf_out = tf.nn.sigmoid(video_clf_out_logits)
 
     video_clf_vars = tf.contrib.framework.get_variables(vs)
