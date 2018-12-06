@@ -454,8 +454,8 @@ def def_c3d_large_video_ae(input, is_training=True, reuse=False,
 
 
 def def_c3d_small_video_classifier(
-        input, is_training=True, reuse=False,
-        use_l2_reg=False,
+        input, n_classes, is_training=True,
+        is_multilabel=False, reuse=False, use_l2_reg=False,
         use_batch_norm=False, use_layer_norm=False, use_dropout=True,
         video_emb_layer_name='clf_fc5'):
 
@@ -566,7 +566,7 @@ def def_c3d_small_video_classifier(
             emb_dim = int(video_emb.shape[1])
 
         if use_batch_norm is True:
-            video_clf = tl.batch_normalization(inputs=video_ae_en,
+            video_clf = tl.batch_normalization(inputs=video_clf,
                                                training=is_training,
                                                name='clf_bn4a')
         if use_layer_norm is True:
@@ -595,9 +595,8 @@ def def_c3d_small_video_classifier(
     # flatten_output -> (batch_size, features)
     #                   (32,         4096    )
 
-
         video_clf = tl.dense(inputs=video_clf,
-                             units=2048,
+                             units=1024,
                              activation=tf.nn.relu,
                              kernel_regularizer=regularizer,
                              name='clf_fc5')
@@ -611,11 +610,20 @@ def def_c3d_small_video_classifier(
                                    training=is_training,
                                    name=None)
 
-        video_clf_out_logits = tl.dense(inputs=video_clf,
-                                        units=10,
-                                        activation=None,
-                                        kernel_regularizer=regularizer,
-                                        name='clf_fc6')
+        if is_multilabel is True:
+            video_clf_out_logits = tl.dense(inputs=video_clf,
+                                            units=2*n_classes,
+                                            activation=None,
+                                            kernel_regularizer=regularizer,
+                                            name='clf_fc6')
+            video_clf_out_logits = tf.reshape(video_clf_out_logits,
+                                              (-1, n_classes, 2))
+        else:
+            video_clf_out_logits = tl.dense(inputs=video_clf,
+                                            units=n_classes,
+                                            activation=None,
+                                            kernel_regularizer=regularizer,
+                                            name='clf_fc6')
         if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf_out_logits)
             emb_dim = int(video_emb.shape[1])
@@ -629,8 +637,8 @@ def def_c3d_small_video_classifier(
 
 
 def def_c3d_large_video_classifier(
-        input, is_training=True, reuse=False,
-        use_l2_reg=False,
+        input, n_classes, is_training=True,
+        is_multilabel=False, reuse=False, use_l2_reg=False,
         use_batch_norm=False, use_layer_norm=False, use_dropout=True,
         video_emb_layer_name='clf_fc6'):
 
@@ -761,7 +769,7 @@ def def_c3d_large_video_classifier(
             emb_dim = int(video_emb.shape[1])
 
         if use_batch_norm is True:
-            video_clf = tl.batch_normalization(inputs=video_ae_en,
+            video_clf = tl.batch_normalization(inputs=video_clf,
                                                training=is_training,
                                                name='clf_bn4a')
         if use_layer_norm is True:
@@ -780,7 +788,7 @@ def def_c3d_large_video_classifier(
             emb_dim = int(video_emb.shape[1])
 
         if use_batch_norm is True:
-            video_clf = tl.batch_normalization(inputs=video_ae_en,
+            video_clf = tl.batch_normalization(inputs=video_clf,
                                                training=is_training,
                                                name='clf_bn4b')
         if use_layer_norm is True:
@@ -810,7 +818,7 @@ def def_c3d_large_video_classifier(
             emb_dim = int(video_emb.shape[1])
 
         if use_batch_norm is True:
-            video_clf = tl.batch_normalization(inputs=video_ae_en,
+            video_clf = tl.batch_normalization(inputs=video_clf,
                                                training=is_training,
                                                name='clf_bn5a')
         if use_layer_norm is True:
@@ -829,7 +837,7 @@ def def_c3d_large_video_classifier(
             emb_dim = int(video_emb.shape[1])
 
         if use_batch_norm is True:
-            video_clf = tl.batch_normalization(inputs=video_ae_en,
+            video_clf = tl.batch_normalization(inputs=video_clf,
                                                training=is_training,
                                                name='clf_bn5b')
         if use_layer_norm is True:
@@ -874,7 +882,7 @@ def def_c3d_large_video_classifier(
                                    name=None)
 
         video_clf = tl.dense(inputs=video_clf,
-                             units=4096,
+                             units=2048,
                              activation=tf.nn.relu,
                              kernel_regularizer=regularizer,
                              name='clf_fc7')
@@ -888,11 +896,20 @@ def def_c3d_large_video_classifier(
                                    training=is_training,
                                    name=None)
 
-        video_clf_out_logits = tl.dense(inputs=video_clf,
-                                        units=10,
-                                        activation=None,
-                                        kernel_regularizer=regularizer,
-                                        name='clf_fc8')
+        if is_multilabel is True:
+            video_clf_out_logits = tl.dense(inputs=video_clf,
+                                            units=2*n_classes,
+                                            activation=None,
+                                            kernel_regularizer=regularizer,
+                                            name='clf_fc8')
+            video_clf_out_logits = tf.reshape(video_clf_out_logits,
+                                              (-1, n_classes, 2))
+        else:
+            video_clf_out_logits = tl.dense(inputs=video_clf,
+                                            units=n_classes,
+                                            activation=None,
+                                            kernel_regularizer=regularizer,
+                                            name='clf_fc8')
         if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf_out_logits)
             emb_dim = int(video_emb.shape[1])
