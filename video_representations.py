@@ -15,6 +15,7 @@ from parse_config import parse_args
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.metrics import classification_report, accuracy_score
 
 from models_c3d import def_c3d_large_video_ae, \
                        def_c3d_small_video_ae, \
@@ -59,9 +60,14 @@ class VideoRep():
             self.emb_dim = 2048
 
         self.dataset_name = dataset_name
+        if self.dataset_name in ['bouncingMNIST']:
+            self.is_multilabel = True
+        else:
+            self.is_multilabel = False
         self.tr_size = tr_size
         self.val_size = val_size
-        self.n_classes = 10
+        self.n_classes = 10                 # number of possible classes
+        self.n_labels = 2                   # number of labels for each sample
 
         self.use_batch_norm = use_batch_norm
         self.use_layer_norm = use_layer_norm
@@ -186,26 +192,39 @@ class VideoRep():
         return '{}_{}'.format(self.model_name, self.model_id)
 
     def _def_loss_fn(self):
-        if self.is_ae:  # mse
+        if self.is_ae is True:  # mse
             self.loss = tf.reduce_mean(
                 tf.square(self.net_out - self.video))
 
         else:  # binary_crossentropy
-            self.loss = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(
-                    logits=self.net_out_logits,
-                    labels=self.labels))
+            if self.dataset_name in ['bouncingMNIST']:
+                self.loss = tf.reduce_mean(tf.reduce_sum(
+                    tf.nn.sigmoid_cross_entropy_with_logits(
+                        logits=self.net_out_logits,
+                        labels=self.labels), axis=1))
+            else:
+                self.loss = tf.reduce_mean(
+                    tf.nn.sigmoid_cross_entropy_with_logits(
+                        logits=self.net_out_logits,
+                        labels=self.labels))
 
         if self.use_batch_norm is True:
             if self.is_ae is True:  # mse
                 self.test_loss = tf.reduce_mean(
-                    tf.square(self.test_net_out - self.test_video))
+                    tf.square(self.test_net_out - self.video))
 
             else:  # binary_crossentropy
-                self.test_loss = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(
-                        logits=self.test_net_out_logits,
-                        labels=self.test_labels))
+                if self.dataset_name in ['bouncingMNIST']:
+                    self.test_loss = tf.reduce_mean(tf.reduce_sum(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.test_net_out_logits,
+                            labels=self.labels), axis=1))
+                else:
+                    self.test_loss = tf.reduce_mean(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.test_net_out_logits,
+                            labels=self.labels))
+
 
     def _def_optimizer(self):
         with tf.control_dependencies(
@@ -227,10 +246,20 @@ class VideoRep():
         if self.is_ae is True:
             pass
         else:
-            if self.dataset_name in ['bouncingMNIST']:  # multilabel
+            if self.is_multilabel is True:
+                labels = tf.squeeze(tf.nn.top_k(self.labels).indices)
+                predictions = tf.squeeze(tf.nn.top_k(self.net_out).indices)
+
+                correct_predictions = tf.equal(labels, predictions)
+                mean_acc = \
+                    tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+                overall_acc = \
+                    tf.reduce_mean(tf.reduce_min(
+                        tf.cast(correct_prediction, tf.float32), axis=1))
+
                 self.acc, self.acc_op = tf.metrics.mean_per_class_accuracy(
-                        labels=self.labels,
-                        predictions=self.net_out_logits,
+                        labels=labels,
+                        predictions=predictions,
                         num_classes=10, name='net_acc')
             else:
                 self.acc, self.acc_op = tf.metrics.accuracy(
@@ -243,11 +272,13 @@ class VideoRep():
 
         return init_eval_vars
 
-
     def _def_model(self):
         """ INPUTS """
         self.video = tf.placeholder(tf.float32, [None, 16, 64, 64, 1])
-        self.labels = tf.placeholder(tf.float32, [None, 10])
+        if self.is_multilabel is True:
+            self.labels = tf.placeholder(tf.float32, [None, self.n_classes, 2])
+        else:
+            self.labels = tf.placeholder(tf.float32, [None, self.n_classes])
 
         if self.model_type == 'c3d_ae_small':
             self.net_out, \
@@ -269,8 +300,8 @@ class VideoRep():
                 self.learnable_vars, \
                 self.emb_dim = \
                 def_c3d_small_video_classifier(
-                    self.video,
-                    is_training=True,
+                    self.video,  n_classes=self.n_classes,
+                    is_training=True, is_multilabel=self.is_multilabel,
                     reuse=False,
                     use_l2_reg=self.use_l2_reg,
                     use_batch_norm=self.use_batch_norm,
@@ -282,7 +313,7 @@ class VideoRep():
                 self.learnable_vars, \
                 self.emb_dim = \
                 def_c3d_large_video_ae(
-                    self.video,
+                    input=self.video,
                     is_training=True,
                     reuse=False,
                     use_l2_reg=self.use_l2_reg,
@@ -295,8 +326,8 @@ class VideoRep():
                 self.learnable_vars, \
                 self.emb_dim = \
                 def_c3d_large_video_classifier(
-                    self.video,
-                    is_training=True,
+                    self.video, n_classes=self.n_classes,
+                    is_training=True, is_multilabel=self.is_multilabel,
                     reuse=False,
                     use_l2_reg=self.use_l2_reg,
                     use_batch_norm=self.use_batch_norm,
@@ -379,14 +410,37 @@ class VideoRep():
                     use_l2_reg=self.use_l2_reg,
                     use_batch_norm=self.use_batch_norm,
                     use_layer_norm=self.use_layer_norm)
+        elif self.model_type == 'r3d_clf_small':
+            self.net_out, \
+                self.net_out_logits, \
+                self.video_emb, \
+                self.learnable_vars, \
+                self.emb_dim = \
+                def_r3d(input=self.video, n_classes=self.n_classes,
+                        is_training=True,  is_multilabel=self.is_multilabel,
+                        model_depth=10, model_size='small',
+                        is_decomposed=False, verbosity=self.verbosity,
+                        reuse=False, video_emb_layer_name='res3')
+        elif self.model_type == 'r3d_clf_large':
+            self.net_out, \
+                self.net_out_logits, \
+                self.video_emb, \
+                self.learnable_vars, \
+                self.emb_dim = \
+                def_r3d(input=self.video, n_classes=self.n_classes,
+                        is_training=True, is_multilabel=self.is_multilabel,
+                        model_depth=18, model_size='large',
+                        is_decomposed=False, verbosity=self.verbosity,
+                        reuse=False, video_emb_layer_name='res7')
         elif self.model_type == 'r21d_clf_small':
             self.net_out, \
                 self.net_out_logits, \
                 self.video_emb, \
                 self.learnable_vars, \
                 self.emb_dim = \
-                def_r3d(input=self.video, num_labels=self.n_classes,
-                        is_training=True, model_depth=10,
+                def_r3d(input=self.video, n_classes=self.n_classes,
+                        is_training=True,  is_multilabel=self.is_multilabel,
+                        model_depth=10, model_size='small',
                         is_decomposed=True, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res3')
         elif self.model_type == 'r21d_clf_large':
@@ -395,15 +449,13 @@ class VideoRep():
                 self.video_emb, \
                 self.learnable_vars, \
                 self.emb_dim = \
-                def_r3d(input=self.video, num_labels=self.n_classes,
-                        is_training=True, model_depth=18,
+                def_r3d(input=self.video, n_classes=self.n_classes,
+                        is_training=True, is_multilabel=self.is_multilabel,
+                        model_depth=18, model_size='large',
                         is_decomposed=True, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res7')
 
         if self.use_batch_norm is True:
-            self.test_video = tf.placeholder(tf.float32, [None, 16, 64, 64, 1])
-            self.test_labels = tf.placeholder(tf.float32, [None, 10])
-
             if self.model_type == 'c3d_ae_small':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -412,7 +464,23 @@ class VideoRep():
                     self.emb_dim = \
                     def_c3d_small_video_ae(self.video,
                                            is_training=False,
-                                           reuse=True)
+                                           reuse=True,
+                                           use_l2_reg=self.use_l2_reg,
+                                           use_batch_norm=self.use_batch_norm,
+                                           use_layer_norm=self.use_layer_norm)
+            elif self.model_type == 'c3d_clf_small':
+                self.test_net_out, \
+                    self.test_net_out_logits, \
+                    self.test_video_emb, \
+                    self.test_learnable_vars, \
+                    self.emb_dim = \
+                    def_c3d_small_video_classifier(
+                        self.video, n_classes=self.n_classes,
+                        is_training=False, is_multilabel=self.is_multilabel,
+                        reuse=True,
+                        use_l2_reg=self.use_l2_reg,
+                        use_batch_norm=self.use_batch_norm,
+                        use_layer_norm=self.use_layer_norm)
             elif self.model_type == 'c3d_ae_large':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -422,6 +490,19 @@ class VideoRep():
                     def_c3d_large_video_ae(self.video,
                                            is_training=False,
                                            reuse=True)
+            elif self.model_type == 'c3d_clf_large':
+                self.test_net_out, \
+                    self.test_net_out_logits, \
+                    self.test_video_emb, \
+                    self.test_learnable_vars, \
+                    self.emb_dim = \
+                    def_c3d_large_video_classifier(
+                        self.video, n_classes=self.n_classes,
+                        is_training=False, is_multilabel=self.is_multilabel,
+                        reuse=True,
+                        use_l2_reg=self.use_l2_reg,
+                        use_batch_norm=self.use_batch_norm,
+                        use_layer_norm=self.use_layer_norm)
             elif self.model_type == 'lstm_ae_small':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -476,6 +557,30 @@ class VideoRep():
                     def_p3d_large_video_ae(self.video,
                                            is_training=False,
                                            reuse=True)
+            elif self.model_type == 'r3d_clf_small':
+                self.test_net_out, \
+                    self.test_net_out_logits, \
+                    self.test_video_emb, \
+                    self.test_learnable_vars, \
+                    self.emb_dim = \
+                    def_r3d(input=self.video, num_labels=self.n_classes,
+                            is_training=False,
+                            is_multilabel=self.is_multilabel,
+                            model_depth=10, model_size='small',
+                            is_decomposed=False, verbosity=self.verbosity,
+                            reuse=True, video_emb_layer_name='res3')
+            elif self.model_type == 'r3d_clf_large':
+                self.test_net_out, \
+                    self.test_net_out_logits, \
+                    self.test_video_emb, \
+                    self.test_learnable_vars, \
+                    self.emb_dim = \
+                    def_r3d(input=self.video, num_labels=self.n_classes,
+                            is_training=False,
+                            is_multilabel=self.is_multilabel,
+                            model_depth=18, model_size='large',
+                            is_decomposed=False, verbosity=self.verbosity,
+                            reuse=True, video_emb_layer_name='res7')
             elif self.model_type == 'r21d_clf_small':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -483,7 +588,9 @@ class VideoRep():
                     self.test_learnable_vars, \
                     self.emb_dim = \
                     def_r3d(input=self.video, num_labels=self.n_classes,
-                            is_training=False, model_depth=10,
+                            is_training=False,
+                            is_multilabel=self.is_multilabel,
+                            model_depth=10, model_size='small',
                             is_decomposed=True, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res3')
             elif self.model_type == 'r21d_clf_large':
@@ -493,15 +600,17 @@ class VideoRep():
                     self.test_learnable_vars, \
                     self.emb_dim = \
                     def_r3d(input=self.video, num_labels=self.n_classes,
-                            is_training=False, model_depth=18,
+                            is_training=False,
+                            is_multilabel=self.is_multilabel,
+                            model_depth=18, model_size='large',
                             is_decomposed=True, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res7')
 
         self._def_loss_fn()
         if self.svm_analysis is True:
             self._def_svm_clf()
-        if self.is_ae is False:
-            self.init_eval_vars = self._def_eval_metrics()
+        # if self.is_ae is False:
+        #     self.init_eval_vars = self._def_eval_metrics()
         self.optim = self._def_optimizer()
 
     def train_model(self):
@@ -516,16 +625,33 @@ class VideoRep():
             # Training
             tr_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
-            tr_labels = np.array([], dtype=np.float32) \
-                .reshape(0, 10)
+
+            if self.is_multilabel is True:
+                tr_labels = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+                tr_pred = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+            else:
+                tr_labels = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+                tr_pred = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+
             for batch_number in tqdm(range(1, self.num_batches+1),
                                      position=0):
                 video_batch, labels = \
                     self.training_generator.get_batch()
 
+                if self.is_multilabel is True:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
                 _, loss, net_out = \
-                    self.sess.run([self.optim,  # self.acc_op, self.auc_op,
-                                   self.loss,  # self.acc, self.auc,
+                    self.sess.run([self.optim,
+                                   self.loss,
                                    self.net_out],
                                   feed_dict={self.video: video_batch,
                                              self.labels: labels})
@@ -540,55 +666,101 @@ class VideoRep():
                 self.plt_loss = np.append(self.plt_loss, loss)
 
                 if self.use_batch_norm is True:
-                    video_emb = \
-                        self.sess.run(self.test_video_emb,
-                                      feed_dict={self.test_video: video_batch,
-                                                 self.test_labels: labels})
+                    video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.test_video_emb,
+                             tf.squeeze(tf.nn.top_k(labels).indices),
+                             tf.squeeze(
+                                tf.nn.top_k(self.test_net_out).indices)],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
                 else:
-                    video_emb = \
-                        self.sess.run(self.video_emb,
-                                      feed_dict={self.video: video_batch,
-                                                 self.labels: labels})
+                    video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.video_emb,
+                             tf.squeeze(tf.nn.top_k(labels).indices),
+                             tf.squeeze(
+                                tf.nn.top_k(self.net_out).indices)],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
 
                 tr_video_emb = np.vstack([tr_video_emb, video_emb])
                 tr_labels = np.vstack([tr_labels, labels])
+                tr_pred = np.vstack([tr_labels, pred])
 
             # Validation and Visualization
             val_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
-            val_labels = np.array([], dtype=np.float32) \
-                .reshape(0, 10)
-            self.sess.run([self.init_eval_vars])
+
+            if self.is_multilabel is True:
+                val_labels = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+                val_pred = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+            else:
+                val_labels = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+                val_pred = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+
+            # if self.is_ae is False:
+            #     self.sess.run([self.init_eval_vars])
+
             for batch_number in tqdm(range(self.val_num_batches), position=0):
                 video_batch, labels = \
                     self.validation_generator.get_batch()
 
-                if self.use_batch_norm is True:
-                    loss, net_out, video_emb = \
-                        self.sess.run([self.test_loss,
-                                       self.test_net_out,
-                                       self.test_video_emb],
-                                      feed_dict={self.test_video: video_batch,
-                                                 self.test_labels: labels})
-                else:
-                    loss, net_out, video_emb = \
-                        self.sess.run([self.loss, self.net_out,
-                                       self.video_emb],
-                                      feed_dict={self.video: video_batch,
-                                                 self.labels: labels})
+                if self.is_multilabel is True:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
 
-                if self.is_ae is False:
-                    _ = self.sess.run([self.acc_op],
-                                      feed_dict={self.video: video_batch,
-                                                 self.labels: labels})
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                if self.use_batch_norm is True:
+                    loss, net_out, video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.test_loss,
+                             self.test_net_out,
+                             self.test_video_emb,
+                             tf.squeeze(tf.nn.top_k(labels).indices),
+                             tf.squeeze(
+                                tf.nn.top_k(self.test_net_out).indices)],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+                else:
+                    loss, net_out, video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.loss,
+                             self.net_out,
+                             self.video_emb,
+                             tf.squeeze(tf.nn.top_k(labels).indices),
+                             tf.squeeze(
+                                tf.nn.top_k(self.net_out).indices)],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+
+                # if self.is_ae is False:
+                #     _ = self.sess.run([self.acc_op],
+                #                       feed_dict={self.video: video_batch,
+                #                                  self.labels: labels})
 
                 self.val_loss = np.append(self.val_loss, loss)
                 val_video_emb = np.vstack([val_video_emb, video_emb])
                 val_labels = np.vstack([val_labels, labels])
+                val_pred = np.vstack([val_pred, pred])
 
             if self.is_ae is False:
-                self.val_net_acc = np.append(self.val_net_acc,
-                                             self.sess.run(self.acc))
+                if self.verbosity >= 2:
+                    print("Validation classification report - Epoch {}:"
+                          .format(epoch))
+                    print(classification_report(val_labels, val_pred))
+                # classification_report(val_labels, val_pred, output_dict=True)
+                self.val_net_acc = np.append(
+                    self.val_net_acc,
+                    accuracy_score(val_labels, val_pred))
+                # self.val_net_acc = np.append(self.val_net_acc,
+                #                              self.sess.run(self.acc))
             self.validation_generator.on_epoch_end()
 
             if epoch % self.vis_epoch == 0 or \
@@ -611,16 +783,31 @@ class VideoRep():
                     for cl in range(self.n_classes):
                         plt_acc.append(self.val_acc[:, cl])
                         plt_auc.append(self.val_auc[:, cl])
-                        metrics_it_list.append(list(range(0,
-                                                          self.current_epoch,
-                                                          self.vis_epoch)))
+                        if self.vis_epoch == 1:
+                            metrics_it_list.append(
+                                list(range(start=self.vis_epoch,
+                                           stop=self.current_epoch+1,
+                                           step=self.vis_epoch)))
+                        elif epoch != self.epoch:
+                            metrics_it_list.append(
+                                [1] +
+                                list(range(start=self.vis_epoch,
+                                           stop=self.current_epoch+1,
+                                           step=self.vis_epoch)))
+                        else:
+                            metrics_it_list.append(
+                                [1] +
+                                list(range(start=1,
+                                           stop=self.current_epoch+1,
+                                           step=self.vis_epoch)) +
+                                [epoch])
                         metrics_plt_types.append('lines')
                         acc_plt_names.append('Validation Accuracy (SVM) - '
                                              'Class {}'.format(cl))
                         auc_plt_names.append('Validation ROC AUC (SVM) - '
                                              'Class {}'.format(cl))
 
-                val_labels_n = get_labels(val_labels)
+                val_labels_n = get_labels(val_labels, n_labels=self.n_labels)
                 label1 = val_labels_n[:, 0].reshape((-1, 1))
                 label2 = val_labels_n[:, 1].reshape((-1, 1))
 
