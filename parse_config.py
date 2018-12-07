@@ -41,6 +41,7 @@ def parse_args():
                                    'lstm_ae_small', 'lstm_ae_large',
                                    'gru_ae_small', 'gru_ae_large',
                                    'p3d_ae_small', 'p3d_ae_large',
+                                   'r3d_clf_small', 'r3d_clf_large',
                                    'r21d_clf_small', 'r21d_clf_large'],
                           help='Architecture type used for the network',
                           required=True)
@@ -355,12 +356,14 @@ def check_args(args):
                                'lstm_ae_small',
                                'lstm_ae_large', 'gru_ae_small', 'gru_ae_large',
                                'p3d_ae_small', 'p3d_ae_large',
+                               'r3d_clf_small', 'r3d_clf_large'
                                'r21d_clf_small', 'r21d_clf_large'], \
         'invalid model_type. model_type must be one of the following: ' \
         'c3d_ae_small, c3d_ae_large, ' \
         'lstm_ae_small, lstm_ae_large, ' \
         'gru_ae_small, gru_ae_large, ' \
         'p3d_ae_small, p3d_ae_large, ' \
+        'r3d_clf_small, r3d_clf_large.' \
         'r21d_clf_small, r21d_clf_large.'
 
     # DATASET
