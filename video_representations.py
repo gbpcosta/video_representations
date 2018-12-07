@@ -225,7 +225,6 @@ class VideoRep():
                             logits=self.test_net_out_logits,
                             labels=self.labels))
 
-
     def _def_optimizer(self):
         with tf.control_dependencies(
                 tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
@@ -563,7 +562,7 @@ class VideoRep():
                     self.test_video_emb, \
                     self.test_learnable_vars, \
                     self.emb_dim = \
-                    def_r3d(input=self.video, num_labels=self.n_classes,
+                    def_r3d(input=self.video, n_classes=self.n_classes,
                             is_training=False,
                             is_multilabel=self.is_multilabel,
                             model_depth=10, model_size='small',
@@ -575,7 +574,7 @@ class VideoRep():
                     self.test_video_emb, \
                     self.test_learnable_vars, \
                     self.emb_dim = \
-                    def_r3d(input=self.video, num_labels=self.n_classes,
+                    def_r3d(input=self.video, n_classes=self.n_classes,
                             is_training=False,
                             is_multilabel=self.is_multilabel,
                             model_depth=18, model_size='large',
@@ -587,7 +586,7 @@ class VideoRep():
                     self.test_video_emb, \
                     self.test_learnable_vars, \
                     self.emb_dim = \
-                    def_r3d(input=self.video, num_labels=self.n_classes,
+                    def_r3d(input=self.video, n_classes=self.n_classes,
                             is_training=False,
                             is_multilabel=self.is_multilabel,
                             model_depth=10, model_size='small',
@@ -599,7 +598,7 @@ class VideoRep():
                     self.test_video_emb, \
                     self.test_learnable_vars, \
                     self.emb_dim = \
-                    def_r3d(input=self.video, num_labels=self.n_classes,
+                    def_r3d(input=self.video, n_classes=self.n_classes,
                             is_training=False,
                             is_multilabel=self.is_multilabel,
                             model_depth=18, model_size='large',
@@ -665,28 +664,45 @@ class VideoRep():
 
                 self.plt_loss = np.append(self.plt_loss, loss)
 
-                if self.use_batch_norm is True:
-                    video_emb, labels, pred = \
-                        self.sess.run(
-                            [self.test_video_emb,
-                             tf.squeeze(tf.nn.top_k(labels).indices),
-                             tf.squeeze(
-                                tf.nn.top_k(self.test_net_out).indices)],
-                            feed_dict={self.video: video_batch,
-                                       self.labels: labels})
+                if self.is_ae is True:
+                    if self.use_batch_norm is True:
+                        video_emb, labels = \
+                            self.sess.run(
+                                [self.test_video_emb,
+                                 tf.squeeze(tf.nn.top_k(labels).indices)],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
+                    else:
+                        video_emb, labels = \
+                            self.sess.run(
+                                [self.video_emb,
+                                 tf.squeeze(tf.nn.top_k(labels).indices)],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
                 else:
-                    video_emb, labels, pred = \
-                        self.sess.run(
-                            [self.video_emb,
-                             tf.squeeze(tf.nn.top_k(labels).indices),
-                             tf.squeeze(
-                                tf.nn.top_k(self.net_out).indices)],
-                            feed_dict={self.video: video_batch,
-                                       self.labels: labels})
+                    if self.use_batch_norm is True:
+                        video_emb, labels, pred = \
+                            self.sess.run(
+                                [self.test_video_emb,
+                                 tf.squeeze(tf.nn.top_k(labels).indices),
+                                 tf.squeeze(
+                                    tf.nn.top_k(self.test_net_out).indices)],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
+                    else:
+                        video_emb, labels, pred = \
+                            self.sess.run(
+                                [self.video_emb,
+                                 tf.squeeze(tf.nn.top_k(labels).indices),
+                                 tf.squeeze(
+                                    tf.nn.top_k(self.net_out).indices)],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
 
                 tr_video_emb = np.vstack([tr_video_emb, video_emb])
                 tr_labels = np.vstack([tr_labels, labels])
-                tr_pred = np.vstack([tr_labels, pred])
+                if self.is_ae is False:
+                    tr_pred = np.vstack([tr_pred, pred])
 
             # Validation and Visualization
             val_video_emb = np.array([], dtype=np.float32) \
@@ -718,27 +734,45 @@ class VideoRep():
                     labels = np.stack([inverted_labels, labels], axis=2)
 
                 if self.use_batch_norm is True:
-                    loss, net_out, video_emb, labels, pred = \
+                    loss, net_out, video_emb = \
                         self.sess.run(
                             [self.test_loss,
                              self.test_net_out,
-                             self.test_video_emb,
-                             tf.squeeze(tf.nn.top_k(labels).indices),
-                             tf.squeeze(
-                                tf.nn.top_k(self.test_net_out).indices)],
+                             self.test_video_emb],
                             feed_dict={self.video: video_batch,
                                        self.labels: labels})
                 else:
-                    loss, net_out, video_emb, labels, pred = \
+                    loss, net_out, video_emb = \
                         self.sess.run(
                             [self.loss,
                              self.net_out,
-                             self.video_emb,
-                             tf.squeeze(tf.nn.top_k(labels).indices),
-                             tf.squeeze(
-                                tf.nn.top_k(self.net_out).indices)],
+                             self.video_emb],
                             feed_dict={self.video: video_batch,
                                        self.labels: labels})
+
+                if self.is_ae is True:
+                    labels = \
+                        self.sess.run(
+                            tf.squeeze(tf.nn.top_k(labels).indices),
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+                else:
+                    if self.use_batch_norm is True:
+                        labels, pred = \
+                            self.sess.run(
+                                [tf.squeeze(tf.nn.top_k(labels).indices),
+                                 tf.squeeze(
+                                    tf.nn.top_k(self.test_net_out).indices)],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
+                    else:
+                        labels, pred = \
+                            self.sess.run(
+                                [tf.squeeze(tf.nn.top_k(labels).indices),
+                                 tf.squeeze(
+                                    tf.nn.top_k(self.net_out).indices)],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
 
                 # if self.is_ae is False:
                 #     _ = self.sess.run([self.acc_op],
@@ -748,7 +782,8 @@ class VideoRep():
                 self.val_loss = np.append(self.val_loss, loss)
                 val_video_emb = np.vstack([val_video_emb, video_emb])
                 val_labels = np.vstack([val_labels, labels])
-                val_pred = np.vstack([val_pred, pred])
+                if self.is_ae is False:
+                    val_pred = np.vstack([val_pred, pred])
 
             if self.is_ae is False:
                 if self.verbosity >= 2:
@@ -785,21 +820,21 @@ class VideoRep():
                         plt_auc.append(self.val_auc[:, cl])
                         if self.vis_epoch == 1:
                             metrics_it_list.append(
-                                list(range(start=self.vis_epoch,
-                                           stop=self.current_epoch+1,
-                                           step=self.vis_epoch)))
+                                list(range(self.vis_epoch,
+                                           self.current_epoch+1,
+                                           self.vis_epoch)))
                         elif epoch != self.epoch:
                             metrics_it_list.append(
                                 [1] +
-                                list(range(start=self.vis_epoch,
-                                           stop=self.current_epoch+1,
-                                           step=self.vis_epoch)))
+                                list(range(self.vis_epoch,
+                                           self.current_epoch+1,
+                                           self.vis_epoch)))
                         else:
                             metrics_it_list.append(
                                 [1] +
-                                list(range(start=1,
-                                           stop=self.current_epoch+1,
-                                           step=self.vis_epoch)) +
+                                list(range(1,
+                                           self.current_epoch+1,
+                                           self.vis_epoch)) +
                                 [epoch])
                         metrics_plt_types.append('lines')
                         acc_plt_names.append('Validation Accuracy (SVM) - '
