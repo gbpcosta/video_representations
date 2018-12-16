@@ -54,11 +54,6 @@ class VideoRep():
         self.model_type = model_type
         self.is_ae = ('ae' in self.model_type)
 
-        if 'small' in self.model_type:
-            self.emb_dim = 1024
-        elif 'large' in self.model_type:
-            self.emb_dim = 2048
-
         self.dataset_name = dataset_name
         if self.dataset_name in ['bouncingMNIST']:
             self.is_multilabel = True
@@ -155,13 +150,11 @@ class VideoRep():
                 if self.svm_analysis is True:
                     self.val_auc = pd.read_hdf(
                         os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                        'val_auc').values \
-                        .flatten()
+                        'val_auc').values
 
                     self.val_acc = pd.read_hdf(
                         os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                        'val_acc').values \
-                        .flatten()
+                        'val_acc').values
 
                 self.current_epoch = (self.plt_loss.shape[0] //
                                       self.num_batches) + 1
@@ -859,6 +852,7 @@ class VideoRep():
                                                     label1.squeeze())
                 lda_video_proj1 = np.concatenate([lda_video_proj1, label1],
                                                  axis=1)
+
                 lda_video_proj2 = lda.fit_transform(val_video_emb,
                                                     label2.squeeze())
                 lda_video_proj2 = np.concatenate([lda_video_proj2, label2],
@@ -1016,23 +1010,15 @@ class VideoRep():
                             bot=None)
 
             if epoch % self.checkpoint_epoch == 0 or \
+                    epoch == 1 or \
                     epoch == self.epoch:
-                self.saver.save(
-                    self.sess,
-                    os.path.join(
-                        self.model_dir,
-                        'checkpoint-epoch'),
-                    global_step=epoch)
-
                 n_epochs = self.checkpoint_epoch
-
-                overall_epoch = epoch
 
                 for ii in range(n_epochs, 1, -1):
                     pd.DataFrame(
                         self.plt_loss[-ii*self.num_batches:
                                       -(ii-1)*self.num_batches]
-                        .reshape((1, -1)), index=[overall_epoch-ii]) \
+                        .reshape((1, -1)), index=[epoch-ii]) \
                         .to_hdf(os.path.join(self.model_dir,
                                              'plt_loss_bkup.h5'),
                                 'loss',
@@ -1040,7 +1026,7 @@ class VideoRep():
 
                 pd.DataFrame(
                     self.plt_loss[-self.num_batches:]
-                    .reshape((1, -1)), index=[overall_epoch]) \
+                    .reshape((1, -1)), index=[epoch]) \
                     .to_hdf(os.path.join(self.model_dir,
                                          'plt_loss_bkup.h5'),
                             'loss',
@@ -1050,7 +1036,7 @@ class VideoRep():
                     pd.DataFrame(
                         self.val_loss[-ii*self.val_num_batches:
                                       -(ii-1)*self.val_num_batches]
-                        .reshape((1, -1)), index=[overall_epoch-ii]) \
+                        .reshape((1, -1)), index=[epoch-ii]) \
                         .to_hdf(os.path.join(self.model_dir,
                                              'plt_loss_bkup.h5'),
                                 'val_loss',
@@ -1058,20 +1044,17 @@ class VideoRep():
 
                 pd.DataFrame(
                     self.val_loss[-self.val_num_batches:]
-                    .reshape((1, -1)), index=[overall_epoch]) \
+                    .reshape((1, -1)), index=[epoch]) \
                     .to_hdf(os.path.join(self.model_dir,
                                          'plt_loss_bkup.h5'),
                             'val_loss',
                             append=True, format='table')
 
                 if self.is_ae is False:
-                    aux = self.checkpoint_epoch
-                    if epoch == self.epoch and self.checkpoint_epoch != 1:
-                        aux = self.epoch % self.checkpoint_epoch
-
                     pd.DataFrame(
-                        self.val_net_acc[-aux:]
-                        .reshape((1, -1)), index=[overall_epoch]) \
+                        self.val_net_acc[-self.checkpoint_epoch:],
+                        index=list(range(max(1, epoch-self.checkpoint_epoch+1),
+                                         epoch+1))) \
                         .to_hdf(os.path.join(self.model_dir,
                                              'plt_loss_bkup.h5'),
                                 'val_net_acc',
@@ -1079,18 +1062,27 @@ class VideoRep():
 
                 if self.svm_analysis is True:
                     pd.DataFrame(
-                        self.val_acc[-1]).to_hdf(
+                        self.val_acc[-1].reshape((1, -1)), index=[epoch]) \
+                        .to_hdf(
                             os.path.join(self.model_dir,
                                          'plt_loss_bkup.h5'),
                             'val_acc',
                             append=True, format='table')
 
                     pd.DataFrame(
-                        self.val_auc[-1]).to_hdf(
+                        self.val_auc[-1].reshape((1, -1)), index=[epoch]) \
+                        .to_hdf(
                             os.path.join(self.model_dir,
                                          'plt_loss_bkup.h5'),
                             'val_auc',
                             append=True, format='table')
+
+                self.saver.save(
+                    self.sess,
+                    os.path.join(
+                        self.model_dir,
+                        'checkpoint-epoch'),
+                    global_step=epoch)
 
             self.training_generator.on_epoch_end()
             self.current_epoch += 1
