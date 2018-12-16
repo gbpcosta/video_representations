@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler, label_binarize
 
@@ -279,8 +279,7 @@ class SVMEval():
         self.tr_size = tr_size
         self.val_size = val_size
         self.n_splits = n_splits
-        self.param_grid = [{'C': [1, 10, 100, 1000],
-                            'kernel': ['linear']}]
+        self.param_grid = [{'C': [1, 10, 100, 1000]}]
         self.scale = scale
         self.per_class = per_class
         self.verbose = verbose
@@ -306,10 +305,11 @@ class SVMEval():
                 aux_acc = []
                 aux_auc = []
                 if self.n_splits > 1:
-                    grid = GridSearchCV(SVC(decision_function_shape='ovr'),
-                                        param_grid=self.param_grid,
-                                        cv=self.n_splits, verbose=self.verbose,
-                                        scoring='accuracy', n_jobs=3)
+                    grid = GridSearchCV(
+                        LinearSVC(multi_class='ovr'),
+                        param_grid=self.param_grid,
+                        cv=self.n_splits, verbose=self.verbose,
+                        scoring='accuracy', n_jobs=3)
                     grid.fit(X=x_train, y=y_train[:, cl])
                     acc_on_val = grid.score(x_test, y_test[:, cl])
                 else:
@@ -317,7 +317,7 @@ class SVMEval():
                 aux_acc.append(acc_on_val)
 
                 if self.n_splits > 1:
-                    grid = GridSearchCV(SVC(decision_function_shape='ovr'),
+                    grid = GridSearchCV(LinearSVC(multi_class='ovr'),
                                         param_grid=self.param_grid,
                                         cv=self.n_splits, verbose=self.verbose,
                                         scoring='roc_auc', n_jobs=3)
@@ -335,7 +335,7 @@ class SVMEval():
         else:
             val_acc = []
             if self.n_splits > 1:
-                grid = GridSearchCV(SVC(decision_function_shape='ovr'),
+                grid = GridSearchCV(LinearSVC(multi_class='ovr'),
                                     param_grid=self.param_grid,
                                     cv=self.n_splits, verbose=self.verbose,
                                     scoring='accuracy', n_jobs=3)
