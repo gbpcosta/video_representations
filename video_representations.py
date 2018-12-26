@@ -157,7 +157,7 @@ class VideoRep():
                         'val_acc').values
 
                 self.current_epoch = (self.plt_loss.shape[0] //
-                                      self.num_batches) + 1
+                                      self.num_batches)
                 if self.verbosity >= 1:
                     print('Checkpoint loaded - epoch {}'
                           .format(self.current_epoch))
@@ -767,11 +767,6 @@ class VideoRep():
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
 
-                # if self.is_ae is False:
-                #     _ = self.sess.run([self.acc_op],
-                #                       feed_dict={self.video: video_batch,
-                #                                  self.labels: labels})
-
                 self.val_loss = np.append(self.val_loss, loss)
                 val_video_emb = np.vstack([val_video_emb, video_emb])
                 val_labels = np.vstack([val_labels, labels])
@@ -783,12 +778,9 @@ class VideoRep():
                     print("Validation classification report - Epoch {}:"
                           .format(epoch))
                     print(classification_report(val_labels, val_pred))
-                # classification_report(val_labels, val_pred, output_dict=True)
                 self.val_net_acc = np.append(
                     self.val_net_acc,
                     accuracy_score(val_labels, val_pred))
-                # self.val_net_acc = np.append(self.val_net_acc,
-                #                              self.sess.run(self.acc))
             self.validation_generator.on_epoch_end()
 
             if epoch % self.vis_epoch == 0 or \
@@ -880,7 +872,7 @@ class VideoRep():
                                     net_out[0].squeeze(),
                                     video_batch[1].squeeze(),
                                     net_out[1].squeeze()]
-                    iterations_list = [list(range(self.current_epoch *
+                    iterations_list = [list(range((self.current_epoch+1) *
                                                   self.num_batches)),
                                        None, None, None, None,
                                        None, None, None,
@@ -911,9 +903,9 @@ class VideoRep():
                                     lda_video_proj2,
                                     tsne_video_proj1,
                                     tsne_video_proj2]
-                    iterations_list = [list(range(self.current_epoch *
+                    iterations_list = [list(range((self.current_epoch+1) *
                                                   self.num_batches)),
-                                       list(range(self.current_epoch)),
+                                       list(range((self.current_epoch+1))),
                                        None, None, None, None,
                                        None, None]
                     plt_types = ['lines', 'lines', 'scatter', 'scatter',
@@ -1087,6 +1079,82 @@ class VideoRep():
             self.training_generator.on_epoch_end()
             self.current_epoch += 1
 
+    def extract_features(self):
+        if self.current_epoch == 1:
+            print('Model needs to be trained before feature '
+                  'extraction is done.')
+        else:
+            tr_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.emb_dim)
+
+            for batch_number in tqdm(range(1, self.num_batches+1),
+                                     position=0):
+                video_batch, labels = \
+                    self.training_generator.get_batch()
+
+                if self.is_multilabel is True:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                if self.use_batch_norm is True:
+                    video_emb = \
+                        self.sess.run(
+                            self.test_video_emb,
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+                else:
+                    video_emb = \
+                        self.sess.run(
+                            self.video_emb,
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+
+                tr_video_emb = np.vstack([tr_video_emb, video_emb])
+
+            # Validation
+            val_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.emb_dim)
+
+            for batch_number in tqdm(range(self.val_num_batches), position=0):
+                video_batch, labels = \
+                    self.validation_generator.get_batch()
+
+                if self.is_multilabel is True:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                if self.use_batch_norm is True:
+                    video_emb = \
+                        self.sess.run(
+                            self.test_video_emb,
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+                else:
+                    video_emb = \
+                        self.sess.run(
+                            self.video_emb,
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+
+                val_video_emb = np.vstack([val_video_emb,
+                                           video_emb])
+
+            pd.DataFrame(tr_video_emb) \
+                .to_hdf(os.path.join(self.model_dir,
+                                     'extracted_features.h5'),
+                        'training_data')
+
+            pd.DataFrame(val_video_emb) \
+                .to_hdf(os.path.join(self.model_dir,
+                                     'extracted_features.h5'),
+                        'validation_data')
+
 
 if __name__ == "__main__":
     # parse arguments
@@ -1126,4 +1194,9 @@ if __name__ == "__main__":
                      plt_dir=args.plt_dir,
                      model_dir=args.model_dir,
                      config_dir=args.config_dir)
-    model.train_model()
+    if args.ex_mode == 'training':
+        model.train_model()
+    elif args.ex_mode == 'feat_extraction':
+        model.extract_features()
+    else:
+        raise NotImplementedError

@@ -45,6 +45,11 @@ def parse_args():
                                    'r21d_clf_small', 'r21d_clf_large'],
                           help='Architecture type used for the network',
                           required=True)
+    parser_b.add_argument('--ex_mode', type=str, default='training',
+                          choices=['training', 'feat_extraction'],
+                          help='Execution mode: training or feature '
+                               'extraction.',
+                          required=True)
 
     # DATASET
     parser_b.add_argument('--dataset_name', type=str, default='bouncingMNIST',
@@ -134,6 +139,7 @@ def read_config_file(path):
         default = {'model_id': -1,
                    'model_name': '',
                    'model_type': 'c3d_ae_small',
+                   'ex_mode': 'training',
                    'dataset_name': 'bouncingMNIST',
                    'tr_size': 12800,
                    'val_size': 5120,
@@ -175,6 +181,9 @@ def read_config_file(path):
                 self.model_type = parse_value_or_get_default(config.get,
                                                              'MODEL',
                                                              'model_type')
+                self.ex_mode = parse_value_or_get_default(config.get,
+                                                          'MODEL',
+                                                          'ex_mode')
 
                 # DATASET
                 self.dataset_name = parse_value_or_get_default(config.get,
@@ -261,6 +270,7 @@ def read_config_file(path):
                 self.model_id = args.model_id
                 self.model_name = args.model_name
                 self.model_type = args.model_type
+                self.ex_mode = args.ex_mode
 
                 # DATASET
                 self.dataset_name = args.dataset_name
@@ -304,7 +314,8 @@ def read_config_file(path):
 
             self.config['MODEL'] = {'model_id': self.model_id,
                                     'model_name': self.model_name,
-                                    'model_type': self.model_type}
+                                    'model_type': self.model_type,
+                                    'ex_mode': self.ex_mode}
 
             self.config['DATASET'] = {'dataset_name': self.dataset_name,
                                       'tr_size': self.tr_size,
@@ -365,6 +376,10 @@ def check_args(args):
         'p3d_ae_small, p3d_ae_large, ' \
         'r3d_clf_small, r3d_clf_large, ' \
         'r21d_clf_small, r21d_clf_large.'
+
+    assert args.ex_mode in ['training', 'feat_extraction'], \
+        'invalid ex_mode. ex_mode must be one of the following: ' \
+        'training, feat_extraction.' \
 
     # DATASET
     assert args.dataset_name in ['bouncingMNIST'], \
