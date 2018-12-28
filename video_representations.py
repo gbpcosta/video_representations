@@ -443,7 +443,7 @@ class VideoRep():
                 self.emb_dim = \
                 def_r3d(input=self.video, n_classes=self.n_classes,
                         is_training=True, is_multilabel=self.is_multilabel,
-                        model_depth=18, model_size='large',
+                        model_depth=18, model_size='small',
                         is_decomposed=True, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res7')
 
@@ -594,7 +594,7 @@ class VideoRep():
                     def_r3d(input=self.video, n_classes=self.n_classes,
                             is_training=False,
                             is_multilabel=self.is_multilabel,
-                            model_depth=18, model_size='large',
+                            model_depth=18, model_size='small',
                             is_decomposed=True, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res7')
 
@@ -814,13 +814,20 @@ class VideoRep():
                                 list(range(self.vis_epoch,
                                            self.current_epoch+1,
                                            self.vis_epoch)))
-                        else:
+                        elif epoch == self.epoch and \
+                                epoch % self.vis_epoch != 0:
                             metrics_it_list.append(
                                 [1] +
-                                list(range(1,
+                                list(range(self.vis_epoch,
                                            self.current_epoch+1,
                                            self.vis_epoch)) +
                                 [epoch])
+                        else:
+                            metrics_it_list.append(
+                                [1] +
+                                list(range(self.vis_epoch,
+                                           self.current_epoch+1,
+                                           self.vis_epoch)))
                         metrics_plt_types.append('lines')
                         acc_plt_names.append('Validation Accuracy (SVM) - '
                                              'Class {}'.format(cl))
