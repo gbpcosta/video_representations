@@ -40,7 +40,8 @@ class VideoRep():
 
     def __init__(self, sess,
                  model_id, model_name, model_type,
-                 dataset_name, tr_size, val_size,
+                 dataset_name, class_velocity, hide_digits,
+                 tr_size, val_size,
                  use_batch_norm, use_layer_norm, use_l2_reg,
                  epoch, batch_size, learning_rate,
                  svm_analysis, vis_epoch, plot_individually, verbosity,
@@ -59,6 +60,8 @@ class VideoRep():
             self.is_multilabel = True
         else:
             self.is_multilabel = False
+        self.class_velocity = class_velocity
+        self.hide_digits = hide_digits
         self.tr_size = tr_size
         self.val_size = val_size
         self.n_classes = 10                 # number of possible classes
@@ -102,16 +105,23 @@ class VideoRep():
         self._def_model()
         self.current_epoch = 1
 
-        self.training_generator = \
-            BouncingMNISTDataGenerator(dataset_size=self.tr_size,
-                                       batch_size=self.batch_size,
-                                       ae=self.is_ae,
-                                       noise=self.is_ae)
-        self.validation_generator = \
-            BouncingMNISTDataGenerator(dataset_size=self.val_size,
-                                       batch_size=self.batch_size,
-                                       ae=self.is_ae,
-                                       split='test')
+        if self.dataset_name == 'bouncingMNIST':
+            self.training_generator = \
+                BouncingMNISTDataGenerator(
+                    dataset_size=self.tr_size,
+                    batch_size=self.batch_size,
+                    ae=self.is_ae,
+                    noise=self.is_ae,
+                    class_velocity=self.class_velocity,
+                    hide_digits=self.hide_digits)
+            self.validation_generator = \
+                BouncingMNISTDataGenerator(
+                    dataset_size=self.val_size,
+                    batch_size=self.batch_size,
+                    ae=self.is_ae,
+                    split='test',
+                    class_velocity=self.class_velocity,
+                    hide_digits=self.hide_digits)
 
         self.num_batches = \
             self.training_generator.dataset_size_ // \
@@ -421,7 +431,7 @@ class VideoRep():
                 self.emb_dim = \
                 def_r3d(input=self.video, n_classes=self.n_classes,
                         is_training=True, is_multilabel=self.is_multilabel,
-                        model_depth=18, model_size='large',
+                        model_depth=18, model_size='small',
                         is_decomposed=False, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res7')
         elif self.model_type == 'r21d_clf_small':
@@ -570,7 +580,7 @@ class VideoRep():
                     def_r3d(input=self.video, n_classes=self.n_classes,
                             is_training=False,
                             is_multilabel=self.is_multilabel,
-                            model_depth=18, model_size='large',
+                            model_depth=18, model_size='small',
                             is_decomposed=False, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res7')
             elif self.model_type == 'r21d_clf_small':
@@ -774,10 +784,11 @@ class VideoRep():
                     val_pred = np.vstack([val_pred, pred])
 
             if self.is_ae is False:
-                if self.verbosity >= 2:
-                    print("Validation classification report - Epoch {}:"
-                          .format(epoch))
-                    print(classification_report(val_labels, val_pred))
+                # TODO: Fix problem with one-hot input to classification_report
+                # if self.verbosity >= 2:
+                #     print("Validation classification report - Epoch {}:"
+                #           .format(epoch))
+                #     print(classification_report(val_labels, val_pred))
                 self.val_net_acc = np.append(
                     self.val_net_acc,
                     accuracy_score(val_labels, val_pred))
@@ -879,8 +890,8 @@ class VideoRep():
                                     net_out[0].squeeze(),
                                     video_batch[1].squeeze(),
                                     net_out[1].squeeze()]
-                    iterations_list = [list(range((self.current_epoch+1) *
-                                                  self.num_batches)),
+                    iterations_list = [list(range(1, (self.current_epoch *
+                                                  self.num_batches)+1)),
                                        None, None, None, None,
                                        None, None, None,
                                        None, None, None]
@@ -910,9 +921,9 @@ class VideoRep():
                                     lda_video_proj2,
                                     tsne_video_proj1,
                                     tsne_video_proj2]
-                    iterations_list = [list(range((self.current_epoch+1) *
-                                                  self.num_batches)),
-                                       list(range((self.current_epoch+1))),
+                    iterations_list = [list(range(1, (self.current_epoch *
+                                                  self.num_batches)+1)),
+                                       list(range(1, self.current_epoch+1)),
                                        None, None, None, None,
                                        None, None]
                     plt_types = ['lines', 'lines', 'scatter', 'scatter',
@@ -1182,6 +1193,8 @@ if __name__ == "__main__":
                      model_name=args.model_name,
                      model_type=args.model_type,
                      dataset_name=args.dataset_name,
+                     class_velocity=args.class_velocity,
+                     hide_digits=args.hide_digits,
                      tr_size=args.tr_size,
                      val_size=args.val_size,
                      use_batch_norm=args.use_batch_norm,

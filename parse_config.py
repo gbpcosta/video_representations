@@ -56,6 +56,14 @@ def parse_args():
                           choices=['bouncingMNIST'],
                           help='Dataset used for training and validation',
                           required=True)
+    parser_b.add_argument('--class_velocity', action='store_true',
+                          help='Uses label to define digit speed when '
+                               'using bouncingMNIST dataset. Ignored '
+                               'otherwise.')
+    parser_b.add_argument('--hide_digits', action='store_true',
+                          help='Replaces digits with a square when '
+                               'using bouncingMNIST dataset. Ignored '
+                               'otherwise.')
     parser_b.add_argument('--tr_size', type=np.int64, default=12800,
                           help='Size of training dataset')
     parser_b.add_argument('--val_size', type=np.int64, default=5120,
@@ -141,6 +149,8 @@ def read_config_file(path):
                    'model_type': 'c3d_ae_small',
                    'ex_mode': 'training',
                    'dataset_name': 'bouncingMNIST',
+                   'class_velocity': False,
+                   'hide_digits': False,
                    'tr_size': 12800,
                    'val_size': 5120,
                    'use_batch_norm': False,
@@ -189,6 +199,14 @@ def read_config_file(path):
                 self.dataset_name = parse_value_or_get_default(config.get,
                                                                'DATASET',
                                                                'dataset_name')
+                self.class_velocity = \
+                    parse_value_or_get_default(config.getboolean,
+                                               'DATASET',
+                                               'class_velocity')
+                self.hide_digits = \
+                    parse_value_or_get_default(config.getboolean,
+                                               'DATASET',
+                                               'hide_digits')
                 self.tr_size = parse_value_or_get_default(config.getint,
                                                           'DATASET', 'tr_size')
                 self.val_size = parse_value_or_get_default(config.getint,
@@ -274,6 +292,8 @@ def read_config_file(path):
 
                 # DATASET
                 self.dataset_name = args.dataset_name
+                self.class_velocity = args.class_velocity
+                self.hide_digits = args.hide_digits
                 self.tr_size = args.tr_size
                 self.val_size = args.val_size
 
@@ -318,6 +338,8 @@ def read_config_file(path):
                                     'ex_mode': self.ex_mode}
 
             self.config['DATASET'] = {'dataset_name': self.dataset_name,
+                                      'class_velocity': self.class_velocity,
+                                      'hide_digits': self.hide_digits,
                                       'tr_size': self.tr_size,
                                       'val_size': self.val_size}
 
@@ -325,7 +347,6 @@ def read_config_file(path):
                 {'use_batch_norm': self.use_batch_norm,
                  'use_layer_norm': self.use_layer_norm,
                  'use_l2_reg': self.use_l2_reg}
-
 
             self.config['TRAINING'] = {'epoch': self.epoch,
                                        'batch_size': self.batch_size,

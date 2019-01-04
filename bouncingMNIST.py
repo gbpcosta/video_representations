@@ -13,7 +13,7 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
     """Data Handler that creates Bouncing MNIST dataset on the fly."""
 
     def __init__(self, seq_length=16, batch_size=32,
-                 dataset_size=32000, image_size=64, digit_size=28,
+                 dataset_size=32000, image_size=64, digit_size=28, class_velocity=False, hide_digits=False,
                  num_digits=2, step_length=0.1, shuffle=True,
                  split='train', random_seed=42, ae=False, noise=False,
                  mnist_path='/store/gbpcosta/google_drive/PhD/'
@@ -22,6 +22,8 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
         self.batch_size_ = batch_size
         self.image_size_ = image_size
         self.num_digits_ = num_digits
+        self.class_velocity = class_velocity
+        self.hide_digits = hide_digits
         self.step_length_ = step_length
         # The dataset is really infinite. This is just for validation.
         self.dataset_size_ = dataset_size
@@ -40,6 +42,7 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
         except KeyError:
             print('Please set the correct path to MNIST dataset')
             sys.exit()
+
         self.on_epoch_end()
 
     def get_batch_size(self):
@@ -61,7 +64,7 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
     def reset(self):
         pass
 
-    def get_random_trajectory(self, batch_size):
+    def get_random_trajectory(self, batch_size, labels=None):
         length = self.seq_length_
         canvas_size = self.image_size_ - self.digit_size_
 
@@ -78,8 +81,12 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
         start_x = np.zeros((length, batch_size))
         for i in range(length):
             # Take a step along velocity.
-            y += v_y * self.step_length_
-            x += v_x * self.step_length_
+            if labels is not None:
+                y += v_y * self.step_length_ * (labels+1)
+                x += v_x * self.step_length_ * (labels+1)
+            else:
+                y += v_y * self.step_length_
+                x += v_x * self.step_length_
 
             # Bounce off edges.
             for j in range(batch_size):
@@ -106,11 +113,32 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
     def overlap(self, a, b):
         """ Put b on top of a."""
         return np.maximum(a, b)
-        # return b
+
+    def get_digits_idx(self):
+        idx = np.zeros((self.batch_size_ * self.num_digits_),
+                       dtype=np.int32)
+
+        for ii in range(self.batch_size_ * self.num_digits_):
+            idx[ii] = self.indices_[self.row_]
+            self.row_ += 1
+            if self.row_ == self.data_.shape[0]:
+                self.row_ = 0
+                if self.shuffle_:
+                    np.random.shuffle(self.indices_)
+
+        return idx
 
     def get_batch(self, ret_bbox=False, verbose=False):
-        start_y, start_x = self.get_random_trajectory(self.batch_size_ *
-                                                      self.num_digits_)
+        idx = self.get_digits_idx()
+        if self.class_velocity is True:
+            start_y, start_x = \
+                self.get_random_trajectory(self.batch_size_ *
+                                           self.num_digits_,
+                                           labels=self.labels_[idx])
+        else:
+            start_y, start_x = \
+                self.get_random_trajectory(self.batch_size_ *
+                                           self.num_digits_)
 
         # minibatch data
         data = np.zeros((self.batch_size_, self.seq_length_,
@@ -123,17 +151,18 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
             for n in range(self.num_digits_):
 
                 # get random digit from dataset
-                ind = self.indices_[self.row_]
-                self.row_ += 1
-                if self.row_ == self.data_.shape[0]:
-                    self.row_ = 0
-                    if self.shuffle_:
-                        np.random.shuffle(self.indices_)
-                digit_image = self.data_[ind, :, :, :]
-                label = self.labels_[ind]
+                if self.hide_digits is True:
+                    digit_image = np.zeros(self.data_[0].shape,
+                                           dtype=np.float32)
+                    digit_image[7:-7, 7:-7, :] = \
+                        np.ones((14, 14, 1),
+                                dtype=np.float32)
+                else:
+                    digit_image = \
+                        self.data_[idx[j*self.num_digits_+n], :, :, :]
+                label = self.labels_[idx[j*self.num_digits_+n]]
 
                 # generate video
-                # bbox = []
                 for i in range(self.seq_length_):
                     top = start_y[i, j * self.num_digits_ + n]
                     left = start_x[i, j * self.num_digits_ + n]
@@ -146,7 +175,7 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
                     labels[j, i, n, 0] = label
                     labels[j, i, n, 1:5] = bbox
 
-        if self.ae_:
+        if self.ae_ is True:
             labels = np.clip(np.sum(
                 keras.utils.to_categorical(np.sort(labels[:, 0, :, 0]),
                                            num_classes=10), axis=1), 0, 1)
