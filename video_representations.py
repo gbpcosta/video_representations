@@ -158,9 +158,9 @@ class VideoRep():
                         .flatten()
 
                 if self.svm_analysis is True:
-                    self.val_auc = pd.read_hdf(
-                        os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                        'val_auc').values
+                    # self.val_auc = pd.read_hdf(
+                    #     os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                    #     'val_auc').values
 
                     self.val_acc = pd.read_hdf(
                         os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
@@ -180,8 +180,8 @@ class VideoRep():
                 self.val_net_acc = np.array([])
 
             if self.svm_analysis is True:
-                self.val_auc = np.array([]) \
-                    .reshape(0, self.n_classes)
+                # self.val_auc = np.array([]) \
+                #     .reshape(0, self.n_classes)
                 self.val_acc = np.array([]) \
                     .reshape(0, self.n_classes)
 
@@ -281,6 +281,8 @@ class VideoRep():
             self.labels = tf.placeholder(tf.float32, [None, self.n_classes, 2])
         else:
             self.labels = tf.placeholder(tf.float32, [None, self.n_classes])
+
+        self.get_labels = tf.squeeze(tf.nn.top_k(self.labels).indices)
 
         if self.model_type == 'c3d_ae_small':
             self.net_out, \
@@ -457,6 +459,9 @@ class VideoRep():
                         is_decomposed=True, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res7')
 
+        self.get_pred = \
+            tf.squeeze(tf.nn.top_k(self.net_out).indices)
+
         if self.use_batch_norm is True:
             if self.model_type == 'c3d_ae_small':
                 self.test_net_out, \
@@ -608,6 +613,9 @@ class VideoRep():
                             is_decomposed=True, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res7')
 
+            self.get_test_pred = \
+                tf.squeeze(tf.nn.top_k(self.test_net_out).indices)
+
         self._def_loss_fn()
         if self.svm_analysis is True:
             self._def_svm_clf()
@@ -672,14 +680,14 @@ class VideoRep():
                         video_emb, labels = \
                             self.sess.run(
                                 [self.test_video_emb,
-                                 tf.squeeze(tf.nn.top_k(labels).indices)],
+                                 self.get_labels],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
                         video_emb, labels = \
                             self.sess.run(
                                 [self.video_emb,
-                                 tf.squeeze(tf.nn.top_k(labels).indices)],
+                                 self.get_labels],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                 else:
@@ -687,18 +695,16 @@ class VideoRep():
                         video_emb, labels, pred = \
                             self.sess.run(
                                 [self.test_video_emb,
-                                 tf.squeeze(tf.nn.top_k(labels).indices),
-                                 tf.squeeze(
-                                    tf.nn.top_k(self.test_net_out).indices)],
+                                 self.get_labels,
+                                 self.get_test_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
                         video_emb, labels, pred = \
                             self.sess.run(
                                 [self.video_emb,
-                                 tf.squeeze(tf.nn.top_k(labels).indices),
-                                 tf.squeeze(
-                                    tf.nn.top_k(self.net_out).indices)],
+                                 self.get_labels,
+                                 self.get_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
 
@@ -756,24 +762,22 @@ class VideoRep():
                 if self.is_ae is True:
                     labels = \
                         self.sess.run(
-                            tf.squeeze(tf.nn.top_k(labels).indices),
+                            self.get_labels,
                             feed_dict={self.video: video_batch,
                                        self.labels: labels})
                 else:
                     if self.use_batch_norm is True:
                         labels, pred = \
                             self.sess.run(
-                                [tf.squeeze(tf.nn.top_k(labels).indices),
-                                 tf.squeeze(
-                                    tf.nn.top_k(self.test_net_out).indices)],
+                                [self.get_labels,
+                                 self.get_test_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
                         labels, pred = \
                             self.sess.run(
-                                [tf.squeeze(tf.nn.top_k(labels).indices),
-                                 tf.squeeze(
-                                    tf.nn.top_k(self.net_out).indices)],
+                                [self.get_labels,
+                                 self.get_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
 
@@ -799,21 +803,22 @@ class VideoRep():
                     epoch == self.epoch:
 
                 if self.svm_analysis is True:
-                    val_acc, val_auc, valid_classes = \
+                    # val_auc,
+                    val_acc, valid_classes = \
                         self.svm.compute(train_data=(tr_video_emb, tr_labels),
                                          val_data=(val_video_emb, val_labels))
                     self.val_acc = np.vstack([self.val_acc, val_acc])
-                    self.val_auc = np.vstack([self.val_auc, val_auc])
+                    # self.val_auc = np.vstack([self.val_auc, val_auc])
 
                     plt_acc = []
-                    plt_auc = []
+                    # plt_auc = []
                     metrics_it_list = []
                     acc_plt_names = []
-                    auc_plt_names = []
+                    # auc_plt_names = []
                     metrics_plt_types = []
                     for cl in range(self.n_classes):
                         plt_acc.append(self.val_acc[:, cl])
-                        plt_auc.append(self.val_auc[:, cl])
+                        # plt_auc.append(self.val_auc[:, cl])
                         if self.vis_epoch == 1:
                             metrics_it_list.append(
                                 list(range(self.vis_epoch,
@@ -842,8 +847,8 @@ class VideoRep():
                         metrics_plt_types.append('lines')
                         acc_plt_names.append('Validation Accuracy (SVM) - '
                                              'Class {}'.format(cl))
-                        auc_plt_names.append('Validation ROC AUC (SVM) - '
-                                             'Class {}'.format(cl))
+                        # auc_plt_names.append('Validation ROC AUC (SVM) - '
+                        #                      'Class {}'.format(cl))
 
                 val_labels_n = get_labels(val_labels, n_labels=self.n_labels)
                 label1 = val_labels_n[:, 0].reshape((-1, 1))
@@ -992,32 +997,32 @@ class VideoRep():
                                                   .format(epoch)),
                             bot=None)
 
-                    plot_metrics(
-                        metrics_list=plt_auc,
-                        iterations_list=metrics_it_list,
-                        types=metrics_plt_types,
-                        metric_names=auc_plt_names,
-                        legend=True,
-                        # x_label='Iteration',
-                        # y_label='Loss',
-                        savefile=os.path.join(self.plt_dir,
-                                              'auc_epoch{}.png'
-                                              .format(epoch)),
-                        bot=self.bot)
-
-                    if self.plot_individually is True:
-                        plot_metrics_individually(
-                            metrics_list=plt_auc,
-                            iterations_list=metrics_it_list,
-                            types=metrics_plt_types,
-                            metric_names=auc_plt_names,
-                            legend=True,
-                            # x_label='Iteration',
-                            # y_label='Loss',
-                            savefile=os.path.join(self.plt_dir,
-                                                  'auc_epoch{}.png'
-                                                  .format(epoch)),
-                            bot=None)
+                    # plot_metrics(
+                    #     metrics_list=plt_auc,
+                    #     iterations_list=metrics_it_list,
+                    #     types=metrics_plt_types,
+                    #     metric_names=auc_plt_names,
+                    #     legend=True,
+                    #     # x_label='Iteration',
+                    #     # y_label='Loss',
+                    #     savefile=os.path.join(self.plt_dir,
+                    #                           'auc_epoch{}.png'
+                    #                           .format(epoch)),
+                    #     bot=self.bot)
+                    #
+                    # if self.plot_individually is True:
+                    #     plot_metrics_individually(
+                    #         metrics_list=plt_auc,
+                    #         iterations_list=metrics_it_list,
+                    #         types=metrics_plt_types,
+                    #         metric_names=auc_plt_names,
+                    #         legend=True,
+                    #         # x_label='Iteration',
+                    #         # y_label='Loss',
+                    #         savefile=os.path.join(self.plt_dir,
+                    #                               'auc_epoch{}.png'
+                    #                               .format(epoch)),
+                    #         bot=None)
 
             if epoch % self.checkpoint_epoch == 0 or \
                     epoch == 1 or \
@@ -1079,13 +1084,13 @@ class VideoRep():
                             'val_acc',
                             append=True, format='table')
 
-                    pd.DataFrame(
-                        self.val_auc[-1].reshape((1, -1)), index=[epoch]) \
-                        .to_hdf(
-                            os.path.join(self.model_dir,
-                                         'plt_loss_bkup.h5'),
-                            'val_auc',
-                            append=True, format='table')
+                    # pd.DataFrame(
+                    #     self.val_auc[-1].reshape((1, -1)), index=[epoch]) \
+                    #     .to_hdf(
+                    #         os.path.join(self.model_dir,
+                    #                      'plt_loss_bkup.h5'),
+                    #         'val_auc',
+                    #         append=True, format='table')
 
                 self.saver.save(
                     self.sess,
