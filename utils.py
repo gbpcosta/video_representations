@@ -2,6 +2,7 @@ import os
 import numpy as np
 
 from sklearn.svm import LinearSVC
+from sklearn.linear_model import SGDClassifier
 from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler, label_binarize
 
@@ -279,10 +280,29 @@ class SVMEval():
         self.tr_size = tr_size
         self.val_size = val_size
         self.n_splits = n_splits
-        self.param_grid = [{'C': [1, 10, 100, 1000]}]
+        # self.param_grid = [{'C': [1, 10, 100, 1000]}]
+        self.param_grid = [{'alpha': [1 * tr_size,
+                                      0.1 * tr_size,
+                                      0.01 * tr_size,
+                                      0.001 * tr_size]}]
+        # C_svc * n_samples = 1 / alpha_sgd
         self.scale = scale
         self.per_class = per_class
         self.verbose = verbose
+
+        if self.n_splits > 1:
+            self.acc_grid = GridSearchCV(
+                SGDClassifier(),
+                param_grid=self.param_grid,
+                cv=self.n_splits, verbose=self.verbose,
+                scoring='accuracy', n_jobs=3)
+            # self.auc_grid = GridSearchCV(
+            #     SGDClassifier(),
+            #     param_grid=self.param_grid,
+            #     cv=self.n_splits, verbose=self.verbose,
+            #     scoring='roc_auc', n_jobs=3)
+        else:
+            raise NotImplementedError
 
     def compute(self, train_data, val_data):
         x_train, y_train = train_data
@@ -300,37 +320,50 @@ class SVMEval():
             y_test = label_binarize(y_test, classes=list(valid_classes))
 
             val_acc = []
-            val_auc = []
+            # val_auc = []
             for cl in range(len(valid_classes)):
                 aux_acc = []
-                aux_auc = []
-                if self.n_splits > 1:
-                    grid = GridSearchCV(
-                        LinearSVC(multi_class='ovr'),
-                        param_grid=self.param_grid,
-                        cv=self.n_splits, verbose=self.verbose,
-                        scoring='accuracy', n_jobs=3)
-                    grid.fit(X=x_train, y=y_train[:, cl])
-                    acc_on_val = grid.score(x_test, y_test[:, cl])
-                else:
-                    raise NotImplementedError
+                # aux_auc = []
+                # if self.n_splits > 1:
+                #     # grid = GridSearchCV(
+                #     #     LinearSVC(multi_class='ovr'),
+                #     #     param_grid=self.param_grid,
+                #     #     cv=self.n_splits, verbose=self.verbose,
+                #     #     scoring='accuracy', n_jobs=3)
+                #     grid = GridSearchCV(
+                #         SGDClassifier(),
+                #         param_grid=self.param_grid,
+                #         cv=self.n_splits, verbose=self.verbose,
+                #         scoring='accuracy', n_jobs=3)
+                #     grid.fit(X=x_train, y=y_train[:, cl])
+                #     acc_on_val = grid.score(x_test, y_test[:, cl])
+                # else:
+                #     raise NotImplementedError
+                self.acc_grid.fit(X=x_train, y=y_train[:, cl])
+                acc_on_val = self.acc_grid.score(x_test, y_test[:, cl])
                 aux_acc.append(acc_on_val)
 
-                if self.n_splits > 1:
-                    grid = GridSearchCV(LinearSVC(multi_class='ovr'),
-                                        param_grid=self.param_grid,
-                                        cv=self.n_splits, verbose=self.verbose,
-                                        scoring='roc_auc', n_jobs=3)
-                    grid.fit(X=x_train, y=y_train[:, cl])
-                    auc_on_val = grid.score(x_test, y_test[:, cl])
-                else:
-                    raise NotImplementedError
-                aux_auc.append(auc_on_val)
+                # if self.n_splits > 1:
+                #     # grid = GridSearchCV(LinearSVC(multi_class='ovr'),
+                #     #                     param_grid=self.param_grid,
+                #     #                     cv=self.n_splits, verbose=self.verbose,
+                #     #                     scoring='roc_auc', n_jobs=3)
+                #     grid = GridSearchCV(SGDClassifier(),
+                #                         param_grid=self.param_grid,
+                #                         cv=self.n_splits, verbose=self.verbose,
+                #                         scoring='roc_auc', n_jobs=3)
+                #     grid.fit(X=x_train, y=y_train[:, cl])
+                #     auc_on_val = grid.score(x_test, y_test[:, cl])
+                # else:
+                #     raise NotImplementedError
+                # self.auc_grid.fit(X=x_train, y=y_train[:, cl])
+                # auc_on_val = self.auc_grid.score(x_test, y_test[:, cl])
+                # aux_auc.append(auc_on_val)
 
                 val_acc.append(np.mean(aux_acc))
-                val_auc.append(np.mean(aux_auc))
+                # val_auc.append(np.mean(aux_auc))
 
-            return val_acc, val_auc, valid_classes
+            return val_acc, valid_classes  # val_auc,
 
         else:
             val_acc = []
