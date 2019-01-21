@@ -453,7 +453,7 @@ def def_c3d_large_video_ae(input, is_training=True, reuse=False,
         video_ae_emb, video_ae_vars, emb_dim
 
 
-def def_c3d_small_video_classifier(
+def def_c3d_small_video_classifier_old(
         input, n_classes, is_training=True,
         is_multilabel=False, reuse=False, use_l2_reg=False,
         use_batch_norm=False, use_layer_norm=False, use_dropout=True,
@@ -910,6 +910,196 @@ def def_c3d_large_video_classifier(
                                             activation=None,
                                             kernel_regularizer=regularizer,
                                             name='clf_fc8')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf_out_logits)
+            emb_dim = int(video_emb.shape[1])
+
+        video_clf_out = tf.nn.sigmoid(video_clf_out_logits)
+
+    video_clf_vars = tf.contrib.framework.get_variables(vs)
+
+    return video_clf_out, video_clf_out_logits, \
+        video_emb, video_clf_vars, emb_dim
+
+
+def def_c3d_small_video_classifier(
+        input, n_classes, is_training=True,
+        is_multilabel=False, reuse=False, use_l2_reg=False,
+        use_batch_norm=False, use_layer_norm=False, use_dropout=True,
+        video_emb_layer_name='clf_flatten'):
+
+    if use_l2_reg:
+        regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
+    else:
+        regularizer = None
+
+    with tf.variable_scope('video_classifier', reuse=reuse) as vs:
+        video_clf = tl.conv3d(inputs=input,
+                              filters=32, kernel_size=(3, 7, 7),
+                              strides=(1, 1, 1), padding='same',
+                              data_format='channels_last',
+                              activation=tf.nn.relu,
+                              kernel_regularizer=regularizer,
+                              name='clf_conv1')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+        if use_batch_norm is True:
+            video_clf = tl.batch_normalization(inputs=video_clf,
+                                               training=is_training,
+                                               name='clf_bn1')
+        if use_layer_norm is True:
+            video_clf = tf.contrib.layers.layer_norm(inputs=video_clf)
+
+        # video_clf = tf.nn.relu(video_clf)
+    # conv1_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                 (32,         16,       64,       64,       32        )
+        video_clf = tl.max_pooling3d(inputs=video_clf,
+                                     pool_size=(1, 2, 2),
+                                     strides=(1, 2, 2),
+                                     padding='valid',
+                                     name='clf_pool1')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+    # pool1_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                 (32,         16,       32,       32,       32        )
+
+        video_clf = tl.conv3d(inputs=video_clf,
+                              filters=32, kernel_size=(3, 3, 3),
+                              strides=(1, 1, 1), padding='same',
+                              activation=tf.nn.relu,
+                              kernel_regularizer=regularizer,
+                              name='clf_conv2')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+        if use_batch_norm is True:
+            video_clf = tl.batch_normalization(inputs=video_clf,
+                                               training=is_training,
+                                               name='clf_bn2')
+        if use_layer_norm is True:
+            video_clf = tf.contrib.layers.layer_norm(inputs=video_clf)
+    # conv2_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                 (32,         16,       32,       32,       32       )
+
+        video_clf = tl.conv3d(inputs=video_clf,
+                              filters=64, kernel_size=(3, 3, 3),
+                              strides=(1, 1, 1), padding='same',
+                              activation=tf.nn.relu,
+                              kernel_regularizer=regularizer,
+                              name='clf_conv3')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+        if use_batch_norm is True:
+            video_clf = tl.batch_normalization(inputs=video_clf,
+                                               training=is_training,
+                                               name='clf_bn3')
+        if use_layer_norm is True:
+            video_clf = tf.contrib.layers.layer_norm(inputs=video_clf)
+    # conv3a_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                  (32,         16,        32,       32,       64      )
+
+        video_clf = tl.max_pooling3d(inputs=video_clf,
+                                     pool_size=(2, 2, 2),
+                                     strides=(2, 2, 2),
+                                     padding='valid',
+                                     name='clf_pool3')
+
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+    # pool3_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                 (32,         8,        16,        16,        64       )
+        video_clf = tl.conv3d(inputs=video_clf,
+                              filters=64, kernel_size=(3, 3, 3),
+                              strides=(1, 1, 1), padding='same',
+                              activation=tf.nn.relu,
+                              kernel_regularizer=regularizer,
+                              name='clf_conv4')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+        if use_batch_norm is True:
+            video_clf = tl.batch_normalization(inputs=video_clf,
+                                               training=is_training,
+                                               name='clf_bn4')
+        if use_layer_norm is True:
+            video_clf = tf.contrib.layers.layer_norm(inputs=video_clf)
+    # conv4_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                  (32,         8,        16,        16,       64       )
+
+        video_clf = tl.max_pooling3d(inputs=video_clf,
+                                     pool_size=(2, 2, 2),
+                                     strides=(2, 2, 2),
+                                     padding='valid',
+                                     name='clf_pool4')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+    # pool4_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                 (32,         4,        8,        8,        64       )
+        video_clf = tl.conv3d(inputs=video_clf,
+                              filters=128, kernel_size=(3, 3, 3),
+                              strides=(1, 1, 1), padding='same',
+                              activation=tf.nn.relu,
+                              kernel_regularizer=regularizer,
+                              name='clf_conv5')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+        if use_batch_norm is True:
+            video_clf = tl.batch_normalization(inputs=video_clf,
+                                               training=is_training,
+                                               name='clf_bn5')
+        if use_layer_norm is True:
+            video_clf = tf.contrib.layers.layer_norm(inputs=video_clf)
+    # conv5_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                  (32,         4,        8,        8,       128       )
+
+        video_clf = tl.max_pooling3d(inputs=video_clf,
+                                     pool_size=(2, 2, 2),
+                                     strides=(2, 2, 2),
+                                     padding='valid',
+                                     name='clf_pool5')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+    # pool5_output -> (batch_size, n_frames, img_size, img_size, n_channels)
+    #                 (32,         2,        4,        4,        128       )
+
+
+        video_clf = tl.flatten(inputs=video_clf,
+                               name='clf_flatten')
+        if video_emb_layer_name == video_clf.name.split('/')[1]:
+            video_emb = tl.flatten(video_clf)
+            emb_dim = int(video_emb.shape[1])
+
+    # flatten_output -> (batch_size, features)
+    #                   (32,         4096    )
+
+        if is_multilabel is True:
+            video_clf_out_logits = tl.dense(inputs=video_clf,
+                                            units=2*n_classes,
+                                            activation=None,
+                                            kernel_regularizer=regularizer,
+                                            name='clf_fc6')
+            video_clf_out_logits = tf.reshape(video_clf_out_logits,
+                                              (-1, n_classes, 2))
+        else:
+            video_clf_out_logits = tl.dense(inputs=video_clf,
+                                            units=n_classes,
+                                            activation=None,
+                                            kernel_regularizer=regularizer,
+                                            name='clf_fc6')
         if video_emb_layer_name == video_clf.name.split('/')[1]:
             video_emb = tl.flatten(video_clf_out_logits)
             emb_dim = int(video_emb.shape[1])
