@@ -1,5 +1,81 @@
 import tensorflow as tf
+from ConvRNNCell import ConvLSTMCell
 tl = tf.layers
+
+def def_convlstm_small_video_classifier(input, is_training=True, reuse=False,
+                            use_l2_reg=False,
+                            use_batch_norm=False, use_layer_norm=False,
+                            video_ae_emb_layer_name='',
+                            emb_dim=1024):
+        if use_l2_reg:
+            regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
+        else:
+            regularizer = None
+
+        initializer = tf.glorot_normal_initializer()
+
+        with tf.variable_scope('video_ae_encoder', reuse=reuse) as vs:
+            def convlstm_cell(shape, filters):  # , initializer=initializer):
+                return  ConvLSTMCell(shape=shape,
+                                     filters=filters,
+                                     kernel=(3, 3),
+                                     forget_bias=1.0,
+                                     activation=tf.nn.relu,
+                                     normalize=True,
+                                     peephole=True,
+                                     data_format='channels_last')
+                # return tf.contrib.rnn.ConvLSTMCell(
+                #     conv_ndims=2,
+                #     input_shape=tf.shape(input)[1:],
+                #     output_channels=n_kernels,
+                #     kernel_shape=(3,3),
+                #     skip_connection=False,
+                #     initializers=initializer,
+                #     name='conv_lstm_cell')
+
+
+            stacked_convlstm = \
+                tf.nn.rnn_cell.MultiRNNCell(
+                    cells=[convlstm_cell(shape=tf.shape(input)[2:4],
+                                         filters=32),
+                           convlstm_cell(shape=tf.shape(input)[2:4],
+                                         filters=32),
+                           convlstm_cell(shape=tf.shape(input)[2:4],
+                                         filters=64),
+                           convlstm_cell(shape=tf.shape(input)[2:4],
+                                         filters=64),
+                           convlstm_cell(shape=tf.shape(input)[2:4],
+                                         filters=128)],
+                    state_is_tuple=True)
+
+            output, state = tf.nn.dynamic_rnn(cell=stacked_convlstm,
+                                              inputs=input,
+                                              dtype=inputs.dtype)
+
+            video_ae_de_out = tf.reshape(tf.stack(output, axis=1),
+                                         [-1, 2048])
+
+            video_ae_de_out = tl.dense(video_ae_de_out,
+                                       units=4096,
+                                       activation=None,
+                                       name='vde_fc1')
+
+            video_ae_recon_logits = tf.reshape(video_ae_de_out,
+                                               [-1, input.shape[1], 64, 64, 1])
+            video_ae_recon = tf.nn.sigmoid(video_ae_recon_logits)
+
+        video_ae_vars = tf.contrib.framework.get_variables(vs) + \
+            tf.contrib.framework.get_variables(vs2) + \
+            tf.contrib.framework.get_variables(vs3)
+
+        # get last embedding for each video
+        video_ae_emb = tf.reshape(video_ae_emb,
+                                  [-1, input.shape[1],
+                                   emb_dim])
+        video_ae_emb = video_ae_emb[:, -1, :]
+
+        return video_ae_recon, video_ae_recon_logits, \
+            video_ae_emb, video_ae_vars
 
 
 def def_lstm_small_video_ae(input, is_training=True, reuse=False,

@@ -15,7 +15,7 @@ from parse_config import parse_args
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import accuracy_score
 
 from models_c3d import def_c3d_large_video_ae, \
                        def_c3d_small_video_ae, \
@@ -24,6 +24,7 @@ from models_c3d import def_c3d_large_video_ae, \
 from models_lstm import def_lstm_large_video_ae, def_lstm_small_video_ae
 from models_gru import def_gru_large_video_ae, def_gru_small_video_ae
 from models_residual import def_r3d
+from models_cnn_lstm import def_cnnlstm_small_video_classifier
 
 from bouncingMNIST import BouncingMNISTDataGenerator
 from utils import plot_metrics, plot_metrics_individually, get_labels, SVMEval
@@ -53,7 +54,9 @@ class VideoRep():
         self.model_id = model_id
         self.model_name = model_name
         self.model_type = model_type
-        self.is_ae = ('ae' in self.model_type)
+
+        self.is_ae = (self.model_type.find('ae') != -1)
+        self.is_cnn_lstm = (self.model_type.find('cnn_lstm') != -1)
 
         self.dataset_name = dataset_name
         if self.dataset_name in ['bouncingMNIST']:
@@ -66,6 +69,8 @@ class VideoRep():
         self.val_size = val_size
         self.n_classes = 10                 # number of possible classes
         self.n_labels = 2                   # number of labels for each sample
+
+        self.training_cnn = False
 
         self.use_batch_norm = use_batch_norm
         self.use_layer_norm = use_layer_norm
@@ -85,7 +90,7 @@ class VideoRep():
         self.keep_checkpoint_max = keep_checkpoint_max
         self.redo = redo
 
-        if slack_bot is True:
+        if slack_bot:
             sys.path.insert(0,
                             '/store/gbpcosta/'
                             'google_drive/PhD/random/slack-bot/')
@@ -132,42 +137,82 @@ class VideoRep():
 
         self.saver = tf.train.Saver(max_to_keep=keep_checkpoint_max)
 
-        if self.redo is not True:
+        if not self.redo:
             latest_checkpoint = tf.train.latest_checkpoint(self.model_dir)
+
             if latest_checkpoint is not None:
                 if self.verbosity >= 1:
                     print('Loading checkpoint - {}'.format(latest_checkpoint))
                 self.saver.restore(self.sess, latest_checkpoint)
 
-                # Load training losses from previous checkpoint
-                self.plt_loss = pd.read_hdf(
-                    os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                    'loss').values \
-                    .flatten()
-
-                # Load validation losses from previous checkpoint
-                self.val_loss = pd.read_hdf(
-                    os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                    'val_loss').values \
-                    .flatten()
-
-                if self.is_ae is False:
-                    self.val_net_acc = pd.read_hdf(
+                if self.is_cnn_lstm:
+                    self.training_cnn = pd.read_hdf(
                         os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                        'val_net_acc').values \
+                        'training_cnn').values[0, 0]
+                else:
+                    self.training_cnn = False
+
+                if self.training_cnn:
+                    self.plt_loss = pd.read_hdf(
+                        os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                        'cnn_loss').values \
                         .flatten()
 
-                if self.svm_analysis is True:
-                    # self.val_auc = pd.read_hdf(
-                    #     os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                    #     'val_auc').values
-
-                    self.val_acc = pd.read_hdf(
+                    self.val_loss = pd.read_hdf(
                         os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
-                        'val_acc').values
+                        'val_cnn_loss').values \
+                        .flatten()
 
-                self.current_epoch = (self.plt_loss.shape[0] //
-                                      self.num_batches)
+                    self.val_net_acc = pd.read_hdf(
+                        os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                        'val_cnn_net_acc').values \
+                        .flatten()
+
+                    if self.svm_analysis:
+                        # self.val_auc = pd.read_hdf(
+                        #     os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                        #     'val_cnn_auc').values
+
+                        self.val_acc = pd.read_hdf(
+                            os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                            'val_cnn_acc').values
+                else:
+                    # Load training losses from previous checkpoint
+                    try:
+                        self.plt_loss = pd.read_hdf(
+                            os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                            'loss').values \
+                            .flatten()
+
+                        # Load validation losses from previous checkpoint
+                        self.val_loss = pd.read_hdf(
+                            os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                            'val_loss').values \
+                            .flatten()
+
+                        if self.is_ae is False:
+                            self.val_net_acc = pd.read_hdf(
+                                os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                                'val_net_acc').values \
+                                .flatten()
+
+                        if self.svm_analysis:
+                            # self.val_auc = pd.read_hdf(
+                            #     os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                            #     'val_auc').values
+
+                            self.val_acc = pd.read_hdf(
+                                os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                                'val_acc').values
+                    except KeyError:
+                        trained_cnn = True
+
+                if trained_cnn:
+                    self.current_epoch = 1
+                else:
+                    self.current_epoch = (self.plt_loss.shape[0]
+                                          // self.num_batches) + 1
+
                 if self.verbosity >= 1:
                     print('Checkpoint loaded - epoch {}'
                           .format(self.current_epoch))
@@ -179,11 +224,14 @@ class VideoRep():
             if self.is_ae is False:
                 self.val_net_acc = np.array([])
 
-            if self.svm_analysis is True:
+            if self.svm_analysis:
                 # self.val_auc = np.array([]) \
                 #     .reshape(0, self.n_classes)
                 self.val_acc = np.array([]) \
                     .reshape(0, self.n_classes)
+
+            if self.is_cnn_lstm and latest_checkpoint is None:
+                self.training_cnn = True
 
     def _get_model_name(self):
         # return 'semantic_nn_{}_ae_{}_{}emb_{}epoch_{}' \
@@ -195,49 +243,103 @@ class VideoRep():
         return '{}_{}'.format(self.model_name, self.model_id)
 
     def _def_loss_fn(self):
-        if self.is_ae is True:  # mse
+        if self.is_ae:  # mse
             self.loss = tf.reduce_mean(
                 tf.square(self.net_out - self.video))
 
         else:  # binary_crossentropy
-            if self.dataset_name in ['bouncingMNIST']:
-                self.loss = tf.reduce_mean(tf.reduce_sum(
-                    tf.nn.sigmoid_cross_entropy_with_logits(
-                        logits=self.net_out_logits,
-                        labels=self.labels), axis=1))
-            else:
-                self.loss = tf.reduce_mean(
-                    tf.nn.sigmoid_cross_entropy_with_logits(
-                        logits=self.net_out_logits,
-                        labels=self.labels))
+            if self.is_cnn_lstm:
+                if self.is_multilabel:
+                    self.cnn_loss = tf.reduce_mean(tf.reduce_sum(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.cnn_net_out_logits,
+                            labels=self.frame_labels), axis=1))
 
-        if self.use_batch_norm is True:
-            if self.is_ae is True:  # mse
+                    self.loss = tf.reduce_mean(tf.reduce_sum(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.net_out_logits,
+                            labels=self.frame_labels), axis=1))
+                else:
+                    self.cnn_loss = tf.reduce_mean(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.cnn_net_out_logits,
+                            labels=self.frame_labels))
+
+                    self.loss = tf.reduce_mean(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.net_out_logits,
+                            labels=self.frame_labels))
+            else:
+                if self.is_multilabel:
+                    self.loss = tf.reduce_mean(tf.reduce_sum(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.net_out_logits,
+                            labels=self.labels), axis=1))
+                else:
+                    self.loss = tf.reduce_mean(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            logits=self.net_out_logits,
+                            labels=self.labels))
+
+        if self.use_batch_norm:
+            if self.is_ae:  # mse
                 self.test_loss = tf.reduce_mean(
                     tf.square(self.test_net_out - self.video))
 
             else:  # binary_crossentropy
-                if self.dataset_name in ['bouncingMNIST']:
-                    self.test_loss = tf.reduce_mean(tf.reduce_sum(
-                        tf.nn.sigmoid_cross_entropy_with_logits(
-                            logits=self.test_net_out_logits,
-                            labels=self.labels), axis=1))
+                if self.is_cnn_lstm:
+                    if self.is_multilabel:
+                        self.test_cnn_loss = tf.reduce_mean(tf.reduce_sum(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.test_cnn_net_out_logits,
+                                labels=self.labels), axis=1))
+
+                        self.test_loss = tf.reduce_mean(tf.reduce_sum(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.test_net_out_logits,
+                                labels=self.labels), axis=1))
+                    else:
+                        self.test_cnn_loss = tf.reduce_mean(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.test_cnn_net_out_logits,
+                                labels=self.labels))
+
+                        self.test_loss = tf.reduce_mean(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.test_net_out_logits,
+                                labels=self.labels))
                 else:
-                    self.test_loss = tf.reduce_mean(
-                        tf.nn.sigmoid_cross_entropy_with_logits(
-                            logits=self.test_net_out_logits,
-                            labels=self.labels))
+                    if self.is_multilabel:
+                        self.test_loss = tf.reduce_mean(tf.reduce_sum(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.test_net_out_logits,
+                                labels=self.labels), axis=1))
+                    else:
+                        self.test_loss = tf.reduce_mean(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.test_net_out_logits,
+                                labels=self.labels))
 
     def _def_optimizer(self):
         with tf.control_dependencies(
                 tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-            optim = \
-                tf.train.AdamOptimizer(learning_rate=self.learning_rate,
-                                       beta1=self.beta1) \
-                .minimize(self.loss,
-                          var_list=self.learnable_vars)
-
-            return optim
+            if self.is_cnn_lstm:
+                self.cnn_optim = \
+                    tf.train.AdamOptimizer(learning_rate=self.learning_rate,
+                                           beta1=self.beta1) \
+                    .minimize(self.cnn_loss,
+                              var_list=self.cnn_vars)
+                self.optim = \
+                    tf.train.AdamOptimizer(learning_rate=self.learning_rate,
+                                           beta1=self.beta1) \
+                    .minimize(self.loss,
+                              var_list=self.lstm_vars)
+            else:
+                self.optim = \
+                    tf.train.AdamOptimizer(learning_rate=self.learning_rate,
+                                           beta1=self.beta1) \
+                    .minimize(self.loss,
+                              var_list=self.learnable_vars)
 
     def _def_svm_clf(self):
         self.svm = SVMEval(tr_size=self.tr_size, val_size=self.val_size,
@@ -245,19 +347,12 @@ class VideoRep():
                            verbose=self.verbosity)
 
     def _def_eval_metrics(self):
-        if self.is_ae is True:
+        if self.is_ae:
             pass
         else:
-            if self.is_multilabel is True:
+            if self.is_multilabel:
                 labels = tf.squeeze(tf.nn.top_k(self.labels).indices)
                 predictions = tf.squeeze(tf.nn.top_k(self.net_out).indices)
-
-                correct_predictions = tf.equal(labels, predictions)
-                mean_acc = \
-                    tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-                overall_acc = \
-                    tf.reduce_mean(tf.reduce_min(
-                        tf.cast(correct_prediction, tf.float32), axis=1))
 
                 self.acc, self.acc_op = tf.metrics.mean_per_class_accuracy(
                         labels=labels,
@@ -275,14 +370,35 @@ class VideoRep():
         return init_eval_vars
 
     def _def_model(self):
-        """ INPUTS """
         self.video = tf.placeholder(tf.float32, [None, 16, 64, 64, 1])
-        if self.is_multilabel is True:
+
+        if self.is_multilabel:
             self.labels = tf.placeholder(tf.float32, [None, self.n_classes, 2])
         else:
             self.labels = tf.placeholder(tf.float32, [None, self.n_classes])
 
-        self.get_labels = tf.squeeze(tf.nn.top_k(self.labels).indices)
+        self.get_onehot_labels = \
+            tf.squeeze(tf.nn.top_k(self.labels).indices)
+
+        if self.model_type.find('cnn_lstm') != -1:
+            if self.is_multilabel:
+                frame_labels = tf.expand_dims(self.labels, axis=1)
+
+                frame_labels = \
+                    tf.tile(frame_labels,
+                            [1, self.video.get_shape().as_list()[1], 1, 1])
+                self.frame_labels = tf.reshape(frame_labels,
+                                               [-1, self.n_classes, 2])
+                # self.frame_labels = tf.cast(frame_labels, tf.float32)
+
+            else:
+                frame_labels = tf.expand_dims(self.labels, axis=1)
+                frame_labels = \
+                    tf.tile(frame_labels,
+                            [1, self.video.get_shape().as_list()[1], 1, 1])
+                self.frame_labels = tf.reshape(frame_labels,
+                                               [-1, self.n_classes])
+                # self.frame_labels = tf.cast(frame_labels, tf.float32)
 
         if self.model_type == 'c3d_ae_small':
             self.net_out, \
@@ -362,6 +478,19 @@ class VideoRep():
                     use_l2_reg=self.use_l2_reg,
                     use_batch_norm=self.use_batch_norm,
                     use_layer_norm=self.use_layer_norm)
+        elif self.model_type == 'cnn_lstm_clf_small':
+            (self.cnn_net_out, self.net_out), \
+                (self.cnn_net_out_logits, self.net_out_logits), \
+                (self.cnn_feats, self.video_emb), \
+                (self.cnn_vars, self.lstm_vars), \
+                (self.cnn_emb_dim, self.emb_dim) = \
+                def_cnnlstm_small_video_classifier(
+                    self.video, n_classes=self.n_classes,
+                    is_training=True, is_multilabel=self.is_multilabel,
+                    reuse=False,
+                    use_l2_reg=self.use_l2_reg,
+                    use_batch_norm=self.use_batch_norm,
+                    use_layer_norm=self.use_layer_norm)
         elif self.model_type == 'gru_ae_small':
             self.net_out, \
                 self.net_out_logits, \
@@ -382,32 +511,6 @@ class VideoRep():
                 self.learnable_vars, \
                 self.emb_dim = \
                 def_gru_large_video_ae(
-                    self.video,
-                    is_training=True,
-                    reuse=False,
-                    use_l2_reg=self.use_l2_reg,
-                    use_batch_norm=self.use_batch_norm,
-                    use_layer_norm=self.use_layer_norm)
-        elif self.model_type == 'p3d_ae_small':
-            self.net_out, \
-                self.net_out_logits, \
-                self.video_emb, \
-                self.learnable_vars, \
-                self.emb_dim = \
-                def_p3d_small_video_ae(
-                    self.video,
-                    is_training=True,
-                    reuse=False,
-                    use_l2_reg=self.use_l2_reg,
-                    use_batch_norm=self.use_batch_norm,
-                    use_layer_norm=self.use_layer_norm)
-        elif self.model_type == 'p3d_ae_large':
-            self.net_out, \
-                self.net_out_logits, \
-                self.video_emb, \
-                self.learnable_vars, \
-                self.emb_dim = \
-                def_p3d_large_video_ae(
                     self.video,
                     is_training=True,
                     reuse=False,
@@ -459,10 +562,14 @@ class VideoRep():
                         is_decomposed=True, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res7')
 
-        self.get_pred = \
+        self.get_onehot_pred = \
             tf.squeeze(tf.nn.top_k(self.net_out).indices)
 
-        if self.use_batch_norm is True:
+        if self.model_type.find('cnn_lstm') != -1:
+            self.get_onehot_cnn_pred = \
+                tf.squeeze(tf.nn.top_k(self.cnn_net_out).indices)
+
+        if self.use_batch_norm:
             if self.model_type == 'c3d_ae_small':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -528,6 +635,20 @@ class VideoRep():
                     def_lstm_large_video_ae(self.video,
                                             is_training=False,
                                             reuse=True)
+            elif self.model_type == 'cnn_lstm_clf_small':
+                (self.test_cnn_net_out, self.test_net_out), \
+                    (self.test_cnn_net_out_logits,
+                     self.test_net_out_logits),\
+                    (self.test_cnn_feats, self.test_video_emb), \
+                    (self.test_cnn_vars, self.test_lstm_vars), \
+                    (self.cnn_emb_dim, self.emb_dim) = \
+                    def_cnnlstm_small_video_classifier(
+                        self.video, n_classes=self.n_classes,
+                        is_training=False, is_multilabel=self.is_multilabel,
+                        reuse=True,
+                        use_l2_reg=self.use_l2_reg,
+                        use_batch_norm=self.use_batch_norm,
+                        use_layer_norm=self.use_layer_norm)
             elif self.model_type == 'gru_ae_small':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -544,24 +665,6 @@ class VideoRep():
                     self.test_learnable_vars, \
                     self.emb_dim = \
                     def_gru_large_video_ae(self.video,
-                                           is_training=False,
-                                           reuse=True)
-            elif self.model_type == 'p3d_ae_small':
-                self.test_net_out, \
-                    self.test_net_out_logits, \
-                    self.test_video_emb, \
-                    self.test_learnable_vars, \
-                    self.emb_dim = \
-                    def_p3d_small_video_ae(self.video,
-                                           is_training=False,
-                                           reuse=True)
-            elif self.model_type == 'p3d_ae_large':
-                self.test_net_out, \
-                    self.test_net_out_logits, \
-                    self.test_video_emb, \
-                    self.test_learnable_vars, \
-                    self.emb_dim = \
-                    def_p3d_large_video_ae(self.video,
                                            is_training=False,
                                            reuse=True)
             elif self.model_type == 'r3d_clf_small':
@@ -613,15 +716,483 @@ class VideoRep():
                             is_decomposed=True, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res7')
 
-            self.get_test_pred = \
+            self.get_onehot_test_pred = \
                 tf.squeeze(tf.nn.top_k(self.test_net_out).indices)
 
+            if self.model_type.find('cnn_lstm') != -1:
+                self.get_onehot_test_cnn_pred = \
+                    tf.squeeze(tf.nn.top_k(self.test_cnn_net_out).indices)
+
         self._def_loss_fn()
-        if self.svm_analysis is True:
+        self._def_optimizer()
+        if self.svm_analysis:
             self._def_svm_clf()
-        # if self.is_ae is False:
-        #     self.init_eval_vars = self._def_eval_metrics()
-        self.optim = self._def_optimizer()
+
+    def train_cnn(self):
+        start_time = time.time()
+
+        starting_epoch = self.current_epoch
+
+        self.training_cnn = True
+
+        plt_idx = \
+            np.random.choice(
+                range(self.validation_generator.dataset_size_
+                      * self.video.shape[1]),
+                size=self.validation_generator.dataset_size_)
+
+        for epoch in tqdm(range(starting_epoch, self.epoch+1), position=1):
+            # Training
+            tr_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.cnn_emb_dim)
+
+            # if self.is_multilabel:
+            #     tr_labels = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes)
+            #     tr_pred = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes)
+            # else:
+            tr_labels = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+            tr_pred = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+
+            for batch_number in tqdm(range(1, self.num_batches+1),
+                                     position=0):
+                video_batch, labels = \
+                    self.training_generator.get_batch()
+
+                if self.is_multilabel:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                _, loss, net_out = \
+                    self.sess.run([self.cnn_optim,
+                                   self.cnn_loss,
+                                   self.cnn_net_out],
+                                  feed_dict={self.video: video_batch,
+                                             self.labels: labels})
+
+                if self.verbosity >= 1:
+                    print('CNN Training - Epoch: [%2d] [%4d / %4d] time: '
+                          '%4.4f, loss: %.8f'
+                          % (epoch, batch_number, self.num_batches,
+                             time.time() - start_time,
+                             loss))
+
+                self.plt_loss = np.append(self.plt_loss, loss)
+
+                if self.use_batch_norm:
+                    video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.test_cnn_feats,
+                             self.get_onehot_labels,
+                             self.get_onehot_test_cnn_pred],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+                else:
+                    video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.cnn_feats,
+                             self.get_onehot_labels,
+                             self.get_onehot_cnn_pred],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+
+                tr_video_emb = np.vstack([tr_video_emb, video_emb])
+                tr_labels = np.vstack([tr_labels, labels])
+                if self.is_ae is False:
+                    tr_pred = np.vstack([tr_pred, pred])
+
+            # Validation and Visualization
+            val_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.cnn_emb_dim)
+
+            # if self.is_multilabel:
+            #     val_labels = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes, 2)
+            #     val_pred = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes, 2)
+            # else:
+            val_labels = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+            val_pred = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+
+            for batch_number in tqdm(range(self.val_num_batches), position=0):
+                video_batch, labels = \
+                    self.validation_generator.get_batch()
+
+                if self.is_multilabel:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                if self.use_batch_norm:
+                    loss, net_out, video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.test_cnn_loss,
+                             self.test_cnn_net_out,
+                             self.test_cnn_feats,
+                             self.get_onehot_labels,
+                             self.get_onehot_test_cnn_pred],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+                else:
+                    loss, net_out, video_emb, labels, pred = \
+                        self.sess.run(
+                            [self.cnn_loss,
+                             self.cnn_net_out,
+                             self.cnn_feats,
+                             self.get_onehot_labels,
+                             self.get_onehot_test_cnn_pred],
+                            feed_dict={self.video: video_batch,
+                                       self.labels: labels})
+
+                self.val_loss = np.append(self.val_loss, loss)
+                val_video_emb = np.vstack([val_video_emb, video_emb])
+                val_labels = np.vstack([val_labels, labels])
+
+                if self.is_ae is False:
+                    val_pred = np.vstack([val_pred, pred])
+
+            if self.is_ae is False:
+                self.val_net_acc = np.append(
+                    self.val_net_acc,
+                    accuracy_score(val_labels, val_pred))
+
+            self.validation_generator.on_epoch_end()
+
+            if epoch % self.vis_epoch == 0 or \
+                    epoch == 1 or \
+                    epoch == self.epoch:
+
+                if self.svm_analysis:
+                    # val_auc,
+                    tr_labels = np.expand_dims(tr_labels, axis=1)
+                    tr_labels = \
+                        np.tile(tr_labels,
+                                [1, video_batch.shape[1], 1])
+                    tr_labels = tr_labels.reshape([-1, self.n_classes])
+
+                    val_labels = np.expand_dims(val_labels, axis=1)
+                    val_labels = \
+                        np.tile(val_labels,
+                                [1, video_batch.shape[1], 1])
+                    val_labels = val_labels.reshape([-1, self.n_classes])
+
+                    val_acc, valid_classes = \
+                        self.svm.compute(train_data=(tr_video_emb, tr_labels),
+                                         val_data=(val_video_emb, val_labels))
+                    self.val_acc = np.vstack([self.val_acc, val_acc])
+                    # self.val_auc = np.vstack([self.val_auc, val_auc])
+
+                    plt_acc = []
+                    # plt_auc = []
+                    metrics_it_list = []
+                    acc_plt_names = []
+                    # auc_plt_names = []
+                    metrics_plt_types = []
+                    for cl in range(self.n_classes):
+                        plt_acc.append(self.val_acc[:, cl])
+                        # plt_auc.append(self.val_auc[:, cl])
+                        if self.vis_epoch == 1:
+                            metrics_it_list.append(
+                                list(range(self.vis_epoch,
+                                           self.current_epoch+1,
+                                           self.vis_epoch)))
+                        elif epoch != self.epoch:
+                            metrics_it_list.append(
+                                [1]
+                                + list(range(self.vis_epoch,
+                                             self.current_epoch+1,
+                                             self.vis_epoch)))
+                        elif epoch == self.epoch and \
+                                epoch % self.vis_epoch != 0:
+                            metrics_it_list.append(
+                                [1]
+                                + list(range(self.vis_epoch,
+                                             self.current_epoch+1,
+                                             self.vis_epoch))
+                                + [epoch])
+                        else:
+                            metrics_it_list.append(
+                                [1]
+                                + list(range(self.vis_epoch,
+                                             self.current_epoch+1,
+                                             self.vis_epoch)))
+                        metrics_plt_types.append('lines')
+                        acc_plt_names.append('Validation Accuracy (SVM) - '
+                                             'Class {}'.format(cl))
+                        # auc_plt_names.append('Validation ROC AUC (SVM) - '
+                        #                      'Class {}'.format(cl))
+
+                plt_val_video_emb = val_video_emb[plt_idx]
+
+                val_labels_num = get_labels(val_labels, n_labels=self.n_labels)
+                val_labels_num = np.expand_dims(val_labels_num, axis=1)
+
+                val_labels_num = \
+                    np.tile(val_labels_num,
+                            [1, video_batch.shape[1], 1])
+                val_labels_num = val_labels_num.reshape([-1, self.n_labels])
+                label1 = val_labels_num[plt_idx, 0].reshape((-1, 1))
+                label2 = val_labels_num[plt_idx, 1].reshape((-1, 1))
+
+                # PCA
+                pca = PCA(n_components=2, whiten=True)
+                pca_video_proj = pca.fit_transform(plt_val_video_emb)
+                pca_video_proj1 = np.concatenate([pca_video_proj, label1],
+                                                 axis=1)
+                pca_video_proj2 = np.concatenate([pca_video_proj, label2],
+                                                 axis=1)
+                # LDA
+                lda = LinearDiscriminantAnalysis(n_components=2)
+                lda_video_proj1 = lda.fit_transform(plt_val_video_emb,
+                                                    label1.squeeze())
+                lda_video_proj1 = np.concatenate([lda_video_proj1, label1],
+                                                 axis=1)
+
+                lda_video_proj2 = lda.fit_transform(plt_val_video_emb,
+                                                    label2.squeeze())
+                lda_video_proj2 = np.concatenate([lda_video_proj2, label2],
+                                                 axis=1)
+                # t-SNE
+                tsne = TSNE(n_components=2)
+                tsne_video_proj = tsne.fit_transform(plt_val_video_emb)
+                tsne_video_proj1 = np.concatenate([tsne_video_proj, label1],
+                                                  axis=1)
+                tsne_video_proj2 = np.concatenate([tsne_video_proj, label2],
+                                                  axis=1)
+
+                if self.is_ae:
+                    metrics_list = [self.plt_loss,
+                                    pca_video_proj1,
+                                    pca_video_proj2,
+                                    lda_video_proj1,
+                                    lda_video_proj2,
+                                    tsne_video_proj1,
+                                    tsne_video_proj2,
+                                    video_batch[0].squeeze(),
+                                    net_out[0].squeeze(),
+                                    video_batch[1].squeeze(),
+                                    net_out[1].squeeze()]
+                    iterations_list = [list(range(1, (self.current_epoch
+                                                      * self.num_batches)+1)),
+                                       None, None, None, None,
+                                       None, None, None,
+                                       None, None, None]
+                    plt_types = ['lines',
+                                 'scatter', 'scatter',
+                                 'scatter', 'scatter', 'scatter',
+                                 'scatter', 'image-grid', 'image-grid',
+                                 'image-grid', 'image-grid']
+                    metric_names = ['Loss',
+                                    'PCA Video Projection 1',
+                                    'PCA Video Projection 2',
+                                    'LDA Video Projection 1',
+                                    'LDA Video Projection 2',
+                                    't-SNE Video Projection 1',
+                                    't-SNE Video Projection 2',
+                                    'Video 1',
+                                    'Video Reconstruction AE 1',
+                                    'Video 2',
+                                    'Video Reconstruction AE 2']
+
+                else:
+                    metrics_list = [self.plt_loss,
+                                    self.val_net_acc,
+                                    pca_video_proj1,
+                                    pca_video_proj2,
+                                    lda_video_proj1,
+                                    lda_video_proj2,
+                                    tsne_video_proj1,
+                                    tsne_video_proj2]
+                    iterations_list = [list(range(1, (self.current_epoch
+                                                      * self.num_batches)+1)),
+                                       list(range(1, self.current_epoch+1)),
+                                       None, None, None, None,
+                                       None, None]
+                    plt_types = ['lines', 'lines', 'scatter', 'scatter',
+                                 'scatter', 'scatter', 'scatter',
+                                 'scatter']
+                    metric_names = ['Loss',
+                                    'Network Accuracy',
+                                    'PCA Video Projection 1',
+                                    'PCA Video Projection 2',
+                                    'LDA Video Projection 1',
+                                    'LDA Video Projection 2',
+                                    't-SNE Video Projection 1',
+                                    't-SNE Video Projection 2']
+
+                plot_metrics(
+                    metrics_list=metrics_list,
+                    iterations_list=iterations_list,
+                    types=plt_types,
+                    metric_names=metric_names,
+                    legend=True,
+                    # x_label='Iteration',
+                    # y_label='Loss',
+                    savefile=os.path.join(self.plt_dir,
+                                          'cnn_metrics_epoch{}.png'
+                                          .format(epoch)),
+                    bot=self.bot)
+
+                if self.plot_individually:
+                    plot_metrics_individually(
+                        metrics_list=metrics_list,
+                        iterations_list=iterations_list,
+                        types=plt_types,
+                        metric_names=metric_names,
+                        legend=True,
+                        # x_label='Iteration',
+                        # y_label='Loss',
+                        savefile=os.path.join(self.plt_dir,
+                                              'cnn_metrics_epoch{}.png'
+                                              .format(epoch)),
+                        bot=None)
+
+                if self.svm_analysis:
+                    plot_metrics(
+                        metrics_list=plt_acc,
+                        iterations_list=metrics_it_list,
+                        types=metrics_plt_types,
+                        metric_names=acc_plt_names,
+                        legend=True,
+                        # x_label='Iteration',
+                        # y_label='Loss',
+                        savefile=os.path.join(self.plt_dir,
+                                              'cnn_acc_epoch{}.png'
+                                              .format(epoch)),
+                        bot=self.bot)
+                    if self.plot_individually:
+                        plot_metrics_individually(
+                            metrics_list=plt_acc,
+                            iterations_list=metrics_it_list,
+                            types=metrics_plt_types,
+                            metric_names=acc_plt_names,
+                            legend=True,
+                            # x_label='Iteration',
+                            # y_label='Loss',
+                            savefile=os.path.join(self.plt_dir,
+                                                  'cnn_acc_epoch{}.png'
+                                                  .format(epoch)),
+                            bot=None)
+
+                    # plot_metrics(
+                    #     metrics_list=plt_auc,
+                    #     iterations_list=metrics_it_list,
+                    #     types=metrics_plt_types,
+                    #     metric_names=auc_plt_names,
+                    #     legend=True,
+                    #     # x_label='Iteration',
+                    #     # y_label='Loss',
+                    #     savefile=os.path.join(self.plt_dir,
+                    #                           'auc_epoch{}.png'
+                    #                           .format(epoch)),
+                    #     bot=self.bot)
+                    #
+                    # if self.plot_individually:
+                    #     plot_metrics_individually(
+                    #         metrics_list=plt_auc,
+                    #         iterations_list=metrics_it_list,
+                    #         types=metrics_plt_types,
+                    #         metric_names=auc_plt_names,
+                    #         legend=True,
+                    #         # x_label='Iteration',
+                    #         # y_label='Loss',
+                    #         savefile=os.path.join(self.plt_dir,
+                    #                               'auc_epoch{}.png'
+                    #                               .format(epoch)),
+                    #         bot=None)
+
+            if epoch % self.checkpoint_epoch == 0 or \
+                    epoch == self.epoch:
+                n_epochs = self.checkpoint_epoch
+
+                pd.DataFrame([self.training_cnn]) \
+                    .to_hdf(os.path.join(self.model_dir,
+                                         'plt_loss_bkup.h5'),
+                            'training_cnn',
+                            append=False)
+
+                for ii in range(n_epochs, 1, -1):
+                    pd.DataFrame(
+                        self.plt_loss[-ii*self.num_batches:
+                                      -(ii-1)*self.num_batches]
+                        .reshape((1, -1)), index=[epoch-ii+1]) \
+                        .to_hdf(os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
+                                'cnn_loss',
+                                append=True, format='table')
+
+                pd.DataFrame(
+                    self.plt_loss[-self.num_batches:]
+                    .reshape((1, -1)), index=[epoch]) \
+                    .to_hdf(os.path.join(self.model_dir,
+                                         'plt_loss_bkup.h5'),
+                            'cnn_loss',
+                            append=True, format='table')
+
+                for ii in range(n_epochs, 1, -1):
+                    pd.DataFrame(
+                        self.val_loss[-ii*self.val_num_batches:
+                                      -(ii-1)*self.val_num_batches]
+                        .reshape((1, -1)), index=[epoch-ii+1]) \
+                        .to_hdf(os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
+                                'val_cnn_loss',
+                                append=True, format='table')
+
+                pd.DataFrame(
+                    self.val_loss[-self.val_num_batches:]
+                    .reshape((1, -1)), index=[epoch]) \
+                    .to_hdf(os.path.join(self.model_dir,
+                                         'plt_loss_bkup.h5'),
+                            'val_cnn_loss',
+                            append=True, format='table')
+
+                if self.is_ae is False:
+                    pd.DataFrame(
+                        self.val_net_acc[-self.checkpoint_epoch:],
+                        index=list(range(max(1, epoch-self.checkpoint_epoch+1),
+                                         epoch+1))) \
+                        .to_hdf(os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
+                                'val_cnn_net_acc',
+                                append=True, format='table')
+
+                if self.svm_analysis:
+                    pd.DataFrame(
+                        self.val_acc[-1].reshape((1, -1)), index=[epoch]) \
+                        .to_hdf(
+                            os.path.join(self.model_dir,
+                                         'plt_loss_bkup.h5'),
+                            'val_cnn_acc',
+                            append=True, format='table')
+
+                    # pd.DataFrame(
+                    #     self.val_auc[-1].reshape((1, -1)), index=[epoch]) \
+                    #     .to_hdf(
+                    #         os.path.join(self.model_dir,
+                    #                      'plt_loss_bkup.h5'),
+                    #         'val_auc',
+                    #         append=True, format='table')
+
+                self.saver.save(
+                    self.sess,
+                    os.path.join(
+                        self.model_dir,
+                        'checkpoint-epoch'),
+                    global_step=epoch)
+
+            self.training_generator.on_epoch_end()
+            self.current_epoch += 1
 
     def train_model(self):
         if self.current_epoch == 1:
@@ -631,28 +1202,48 @@ class VideoRep():
 
         starting_epoch = self.current_epoch
 
+        if self.is_cnn_lstm and self.training_cnn:
+            # train cnn first
+            if self.verbosity >= 1:
+                print('Training CNN first!')
+            self.train_cnn()
+
+            self.training_cnn = False
+            self.current_epoch = 1
+
+        self.plt_loss = np.array([])
+        self.val_loss = np.array([])
+        self.val_net_acc = np.array([])
+        self.val_acc = np.array([]).reshape(0, self.n_classes)
+
+        pd.DataFrame([self.training_cnn]) \
+            .to_hdf(os.path.join(self.model_dir,
+                                 'plt_loss_bkup.h5'),
+                    'training_cnn',
+                    append=False)
+
         for epoch in tqdm(range(starting_epoch, self.epoch+1), position=1):
             # Training
             tr_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
 
-            if self.is_multilabel is True:
-                tr_labels = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
-                tr_pred = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
-            else:
-                tr_labels = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
-                tr_pred = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
+            # if self.is_multilabel:
+            #     tr_labels = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes)
+            #     tr_pred = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes)
+            # else:
+            tr_labels = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+            tr_pred = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
 
             for batch_number in tqdm(range(1, self.num_batches+1),
                                      position=0):
                 video_batch, labels = \
                     self.training_generator.get_batch()
 
-                if self.is_multilabel is True:
+                if self.is_multilabel:
                     inverted_labels = 1 - labels
                     labels = labels
                     inverted_labels = inverted_labels
@@ -675,36 +1266,36 @@ class VideoRep():
 
                 self.plt_loss = np.append(self.plt_loss, loss)
 
-                if self.is_ae is True:
-                    if self.use_batch_norm is True:
+                if self.is_ae:
+                    if self.use_batch_norm:
                         video_emb, labels = \
                             self.sess.run(
                                 [self.test_video_emb,
-                                 self.get_labels],
+                                 self.get_onehot_test_labels],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
                         video_emb, labels = \
                             self.sess.run(
                                 [self.video_emb,
-                                 self.get_labels],
+                                 self.get_onehot_labels],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                 else:
-                    if self.use_batch_norm is True:
+                    if self.use_batch_norm:
                         video_emb, labels, pred = \
                             self.sess.run(
                                 [self.test_video_emb,
-                                 self.get_labels,
-                                 self.get_test_pred],
+                                 self.get_onehot_labels,
+                                 self.get_onehot_test_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
                         video_emb, labels, pred = \
                             self.sess.run(
                                 [self.video_emb,
-                                 self.get_labels,
-                                 self.get_pred],
+                                 self.get_onehot_labels,
+                                 self.get_onehot_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
 
@@ -717,16 +1308,16 @@ class VideoRep():
             val_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
 
-            if self.is_multilabel is True:
-                val_labels = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
-                val_pred = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
-            else:
-                val_labels = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
-                val_pred = np.array([], dtype=np.float32) \
-                    .reshape(0, self.n_classes)
+            # if self.is_multilabel:
+            #     val_labels = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes, 2)
+            #     val_pred = np.array([], dtype=np.float32) \
+            #         .reshape(0, self.n_classes, 2)
+            # else:
+            val_labels = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+            val_pred = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
 
             # if self.is_ae is False:
             #     self.sess.run([self.init_eval_vars])
@@ -735,14 +1326,14 @@ class VideoRep():
                 video_batch, labels = \
                     self.validation_generator.get_batch()
 
-                if self.is_multilabel is True:
+                if self.is_multilabel:
                     inverted_labels = 1 - labels
                     labels = labels
                     inverted_labels = inverted_labels
 
                     labels = np.stack([inverted_labels, labels], axis=2)
 
-                if self.use_batch_norm is True:
+                if self.use_batch_norm:
                     loss, net_out, video_emb = \
                         self.sess.run(
                             [self.test_loss,
@@ -759,25 +1350,25 @@ class VideoRep():
                             feed_dict={self.video: video_batch,
                                        self.labels: labels})
 
-                if self.is_ae is True:
+                if self.is_ae:
                     labels = \
                         self.sess.run(
-                            self.get_labels,
+                            self.get_onehot_labels,
                             feed_dict={self.video: video_batch,
                                        self.labels: labels})
                 else:
-                    if self.use_batch_norm is True:
+                    if self.use_batch_norm:
                         labels, pred = \
                             self.sess.run(
-                                [self.get_labels,
-                                 self.get_test_pred],
+                                [self.get_onehot_labels,
+                                 self.get_onehot_test_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
                         labels, pred = \
                             self.sess.run(
-                                [self.get_labels,
-                                 self.get_pred],
+                                [self.get_onehot_labels,
+                                 self.get_onehot_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
 
@@ -788,11 +1379,6 @@ class VideoRep():
                     val_pred = np.vstack([val_pred, pred])
 
             if self.is_ae is False:
-                # TODO: Fix problem with one-hot input to classification_report
-                # if self.verbosity >= 2:
-                #     print("Validation classification report - Epoch {}:"
-                #           .format(epoch))
-                #     print(classification_report(val_labels, val_pred))
                 self.val_net_acc = np.append(
                     self.val_net_acc,
                     accuracy_score(val_labels, val_pred))
@@ -802,7 +1388,7 @@ class VideoRep():
                     epoch == 1 or \
                     epoch == self.epoch:
 
-                if self.svm_analysis is True:
+                if self.svm_analysis:
                     # val_auc,
                     val_acc, valid_classes = \
                         self.svm.compute(train_data=(tr_video_emb, tr_labels),
@@ -826,24 +1412,24 @@ class VideoRep():
                                            self.vis_epoch)))
                         elif epoch != self.epoch:
                             metrics_it_list.append(
-                                [1] +
-                                list(range(self.vis_epoch,
-                                           self.current_epoch+1,
-                                           self.vis_epoch)))
+                                [1]
+                                + list(range(self.vis_epoch,
+                                             self.current_epoch+1,
+                                             self.vis_epoch)))
                         elif epoch == self.epoch and \
                                 epoch % self.vis_epoch != 0:
                             metrics_it_list.append(
-                                [1] +
-                                list(range(self.vis_epoch,
-                                           self.current_epoch+1,
-                                           self.vis_epoch)) +
-                                [epoch])
+                                [1]
+                                + list(range(self.vis_epoch,
+                                             self.current_epoch+1,
+                                             self.vis_epoch))
+                                + [epoch])
                         else:
                             metrics_it_list.append(
-                                [1] +
-                                list(range(self.vis_epoch,
-                                           self.current_epoch+1,
-                                           self.vis_epoch)))
+                                [1]
+                                + list(range(self.vis_epoch,
+                                             self.current_epoch+1,
+                                             self.vis_epoch)))
                         metrics_plt_types.append('lines')
                         acc_plt_names.append('Validation Accuracy (SVM) - '
                                              'Class {}'.format(cl))
@@ -883,7 +1469,7 @@ class VideoRep():
                 tsne_video_proj2 = np.concatenate([tsne_video_proj, label2],
                                                   axis=1)
 
-                if self.is_ae is True:
+                if self.is_ae:
                     metrics_list = [self.plt_loss,
                                     pca_video_proj1,
                                     pca_video_proj2,
@@ -895,8 +1481,8 @@ class VideoRep():
                                     net_out[0].squeeze(),
                                     video_batch[1].squeeze(),
                                     net_out[1].squeeze()]
-                    iterations_list = [list(range(1, (self.current_epoch *
-                                                  self.num_batches)+1)),
+                    iterations_list = [list(range(1, (self.current_epoch
+                                                      * self.num_batches)+1)),
                                        None, None, None, None,
                                        None, None, None,
                                        None, None, None]
@@ -926,8 +1512,8 @@ class VideoRep():
                                     lda_video_proj2,
                                     tsne_video_proj1,
                                     tsne_video_proj2]
-                    iterations_list = [list(range(1, (self.current_epoch *
-                                                  self.num_batches)+1)),
+                    iterations_list = [list(range(1, (self.current_epoch
+                                                      * self.num_batches)+1)),
                                        list(range(1, self.current_epoch+1)),
                                        None, None, None, None,
                                        None, None]
@@ -949,49 +1535,41 @@ class VideoRep():
                     types=plt_types,
                     metric_names=metric_names,
                     legend=True,
-                    # x_label='Iteration',
-                    # y_label='Loss',
                     savefile=os.path.join(self.plt_dir,
                                           'metrics_epoch{}.png'
                                           .format(epoch)),
                     bot=self.bot)
 
-                if self.plot_individually is True:
+                if self.plot_individually:
                     plot_metrics_individually(
                         metrics_list=metrics_list,
                         iterations_list=iterations_list,
                         types=plt_types,
                         metric_names=metric_names,
                         legend=True,
-                        # x_label='Iteration',
-                        # y_label='Loss',
                         savefile=os.path.join(self.plt_dir,
                                               'metrics_epoch{}.png'
                                               .format(epoch)),
                         bot=None)
 
-                if self.svm_analysis is True:
+                if self.svm_analysis:
                     plot_metrics(
                         metrics_list=plt_acc,
                         iterations_list=metrics_it_list,
                         types=metrics_plt_types,
                         metric_names=acc_plt_names,
                         legend=True,
-                        # x_label='Iteration',
-                        # y_label='Loss',
                         savefile=os.path.join(self.plt_dir,
                                               'acc_epoch{}.png'
                                               .format(epoch)),
                         bot=self.bot)
-                    if self.plot_individually is True:
+                    if self.plot_individually:
                         plot_metrics_individually(
                             metrics_list=plt_acc,
                             iterations_list=metrics_it_list,
                             types=metrics_plt_types,
                             metric_names=acc_plt_names,
                             legend=True,
-                            # x_label='Iteration',
-                            # y_label='Loss',
                             savefile=os.path.join(self.plt_dir,
                                                   'acc_epoch{}.png'
                                                   .format(epoch)),
@@ -1010,7 +1588,7 @@ class VideoRep():
                     #                           .format(epoch)),
                     #     bot=self.bot)
                     #
-                    # if self.plot_individually is True:
+                    # if self.plot_individually:
                     #     plot_metrics_individually(
                     #         metrics_list=plt_auc,
                     #         iterations_list=metrics_it_list,
@@ -1025,7 +1603,6 @@ class VideoRep():
                     #         bot=None)
 
             if epoch % self.checkpoint_epoch == 0 or \
-                    epoch == 1 or \
                     epoch == self.epoch:
                 n_epochs = self.checkpoint_epoch
 
@@ -1033,7 +1610,7 @@ class VideoRep():
                     pd.DataFrame(
                         self.plt_loss[-ii*self.num_batches:
                                       -(ii-1)*self.num_batches]
-                        .reshape((1, -1)), index=[epoch-ii]) \
+                        .reshape((1, -1)), index=[epoch-ii+1]) \
                         .to_hdf(os.path.join(self.model_dir,
                                              'plt_loss_bkup.h5'),
                                 'loss',
@@ -1051,7 +1628,7 @@ class VideoRep():
                     pd.DataFrame(
                         self.val_loss[-ii*self.val_num_batches:
                                       -(ii-1)*self.val_num_batches]
-                        .reshape((1, -1)), index=[epoch-ii]) \
+                        .reshape((1, -1)), index=[epoch-ii+1]) \
                         .to_hdf(os.path.join(self.model_dir,
                                              'plt_loss_bkup.h5'),
                                 'val_loss',
@@ -1075,7 +1652,7 @@ class VideoRep():
                                 'val_net_acc',
                                 append=True, format='table')
 
-                if self.svm_analysis is True:
+                if self.svm_analysis:
                     pd.DataFrame(
                         self.val_acc[-1].reshape((1, -1)), index=[epoch]) \
                         .to_hdf(
@@ -1115,14 +1692,14 @@ class VideoRep():
                 video_batch, labels = \
                     self.training_generator.get_batch()
 
-                if self.is_multilabel is True:
+                if self.is_multilabel:
                     inverted_labels = 1 - labels
                     labels = labels
                     inverted_labels = inverted_labels
 
                     labels = np.stack([inverted_labels, labels], axis=2)
 
-                if self.use_batch_norm is True:
+                if self.use_batch_norm:
                     video_emb = \
                         self.sess.run(
                             self.test_video_emb,
@@ -1145,14 +1722,14 @@ class VideoRep():
                 video_batch, labels = \
                     self.validation_generator.get_batch()
 
-                if self.is_multilabel is True:
+                if self.is_multilabel:
                     inverted_labels = 1 - labels
                     labels = labels
                     inverted_labels = inverted_labels
 
                     labels = np.stack([inverted_labels, labels], axis=2)
 
-                if self.use_batch_norm is True:
+                if self.use_batch_norm:
                     video_emb = \
                         self.sess.run(
                             self.test_video_emb,

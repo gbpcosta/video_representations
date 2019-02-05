@@ -39,6 +39,7 @@ def parse_args():
                           choices=['c3d_ae_small', 'c3d_clf_small',
                                    'c3d_ae_large', 'c3d_clf_large',
                                    'lstm_ae_small', 'lstm_ae_large',
+                                   'cnn_lstm_clf_small',
                                    'gru_ae_small', 'gru_ae_large',
                                    'p3d_ae_small', 'p3d_ae_large',
                                    'r3d_clf_small', 'r3d_clf_large',
@@ -385,8 +386,9 @@ def check_args(args):
     # assert args.model_id
     assert args.model_type in ['c3d_ae_small', 'c3d_clf_small',
                                'c3d_ae_large', 'c3d_clf_large',
-                               'lstm_ae_small',
-                               'lstm_ae_large', 'gru_ae_small', 'gru_ae_large',
+                               'lstm_ae_small', 'lstm_ae_large',
+                               'cnn_lstm_clf_small',
+                               'gru_ae_small', 'gru_ae_large',
                                'p3d_ae_small', 'p3d_ae_large',
                                'r3d_clf_small', 'r3d_clf_large',
                                'r21d_clf_small', 'r21d_clf_large'], \

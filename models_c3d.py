@@ -922,11 +922,16 @@ def def_c3d_large_video_classifier(
         video_emb, video_clf_vars, emb_dim
 
 
-def def_c3d_small_video_classifier(
-        input, n_classes, is_training=True,
-        is_multilabel=False, reuse=False, use_l2_reg=False,
-        use_batch_norm=False, use_layer_norm=False, use_dropout=True,
-        video_emb_layer_name='clf_flatten'):
+def def_c3d_small_video_classifier(input,
+                                   n_classes,
+                                   is_training=True,
+                                   is_multilabel=False,
+                                   reuse=False,
+                                   use_l2_reg=False,
+                                   use_batch_norm=False,
+                                   use_layer_norm=False,
+                                   use_dropout=True,
+                                   video_emb_layer_name='clf_flatten'):
 
     if use_l2_reg:
         regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
@@ -1100,7 +1105,7 @@ def def_c3d_small_video_classifier(
                                             activation=None,
                                             kernel_regularizer=regularizer,
                                             name='clf_fc6')
-        if video_emb_layer_name == video_clf.name.split('/')[1]:
+        if video_emb_layer_name == video_clf_out_logits.name.split('/')[1]:
             video_emb = tl.flatten(video_clf_out_logits)
             emb_dim = int(video_emb.shape[1])
 
