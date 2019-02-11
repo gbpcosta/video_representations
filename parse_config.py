@@ -77,6 +77,11 @@ def parse_args():
                           help='Activates layer normalization')
     parser_b.add_argument('--use_l2_reg', action='store_true',
                           help='Activates l2 regularization')
+    parser_b.add_argument('--pretrained_cnn', type=str, default='',
+                          help='Path to pretrained CNN file (.meta) for the '
+                               'CNN+LSTM model. If empty, CNN is trained on '
+                               'framews from the training set. Ignored for '
+                               'every other model.')
 
     # TRAINING
     parser_b.add_argument('--epoch', type=np.int64, default=100,
@@ -157,6 +162,7 @@ def read_config_file(path):
                    'use_batch_norm': False,
                    'use_layer_norm': False,
                    'use_l2_reg': False,
+                   'pretrained_cnn': '',
                    'epoch': 100,
                    'batch_size': 32,
                    'learning_rate': 10e-4,
@@ -227,6 +233,10 @@ def read_config_file(path):
                     parse_value_or_get_default(config.getboolean,
                                                'NETWORK ARCHITECTURE',
                                                'use_l2_reg')
+                self.pretrained_cnn = \
+                    parse_value_or_get_default(config.get,
+                                               'NETWORK ARCHITECTURE',
+                                               'pretrained_cnn')
 
                 # TRAINING
                 self.epoch = parse_value_or_get_default(config.getint,
@@ -302,6 +312,7 @@ def read_config_file(path):
                 self.use_batch_norm = args.use_batch_norm
                 self.use_layer_norm = args.use_layer_norm
                 self.use_l2_reg = args.use_l2_reg
+                self.pretrained_cnn = args.pretrained_cnn
 
                 # TRAINING
                 self.epoch = args.epoch
@@ -347,7 +358,8 @@ def read_config_file(path):
             self.config['NETWORK ARCHITECTURE'] = \
                 {'use_batch_norm': self.use_batch_norm,
                  'use_layer_norm': self.use_layer_norm,
-                 'use_l2_reg': self.use_l2_reg}
+                 'use_l2_reg': self.use_l2_reg,
+                 'pretrained_cnn': self.pretrained_cnn}
 
             self.config['TRAINING'] = {'epoch': self.epoch,
                                        'batch_size': self.batch_size,
@@ -412,6 +424,11 @@ def check_args(args):
     assert args.val_size > 0, 'val_size must be greater than 0.'
 
     # NETWORK ARCHITECTURE
+    # TODO assert pretrained_cnn is either a model file or empty string
+    assert (args.pretrained_cnn.find('.meta') != -1) \
+        | (args.pretrained_cnn in ['mobilenet', 'mnist']), \
+        'pretrained_cnn needs to be and empty string, the path to a ' \
+        '.meta file or a preset model [mobilnet, mnist].'
 
     # TRAINING
     assert args.epoch > 0, \
