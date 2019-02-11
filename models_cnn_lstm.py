@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensornets as nets
 tl = tf.layers
 
 
@@ -10,7 +11,8 @@ def def_cnnlstm_small_video_classifier(inputs,
                                        use_l2_reg=False,
                                        use_batch_norm=False,
                                        use_layer_norm=False,
-                                       video_emb_layer_name='lstm_out'):
+                                       video_emb_layer_name='lstm_out',
+                                       pretrained_cnn=''):
     if use_l2_reg:
         regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
     else:
@@ -24,178 +26,212 @@ def def_cnnlstm_small_video_classifier(inputs,
                        shape=[-1, inputs.shape[2],
                               inputs.shape[3], inputs.shape[4]])
 
-        frame_cnn = tl.conv2d(inputs=cnn_inputs,
-                              filters=64, kernel_size=(7, 7),
-                              strides=(1, 1), padding='same',
-                              data_format='channels_last',
-                              activation=tf.nn.relu,
-                              kernel_regularizer=regularizer,
-                              name='cnn_conv1')
+        if not pretrained_cnn:
 
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
+            frame_cnn = tl.conv2d(inputs=cnn_inputs,
+                                  filters=64, kernel_size=(7, 7),
+                                  strides=(1, 1), padding='same',
+                                  data_format='channels_last',
+                                  activation=tf.nn.relu,
+                                  kernel_regularizer=regularizer,
+                                  name='cnn_conv1')
 
-        if use_batch_norm is True:
-            frame_cnn = tl.batch_normalization(inputs=frame_cnn,
-                                               training=is_training,
-                                               name='cnn_bn1')
-        if use_layer_norm is True:
-            frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
 
-    # conv1_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                 (32 * 16,               64,       64,       32        )
-        frame_cnn = tl.max_pooling2d(inputs=frame_cnn,
-                                     pool_size=(2, 2),
-                                     strides=(2, 2),
-                                     padding='valid',
-                                     name='cnn_pool1')
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
-    # pool1_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                 (32         * 16,       32,       32,       32        )
+            if use_batch_norm is True:
+                frame_cnn = tl.batch_normalization(inputs=frame_cnn,
+                                                   training=is_training,
+                                                   name='cnn_bn1')
+            if use_layer_norm is True:
+                frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
 
-        frame_cnn = tl.conv2d(inputs=frame_cnn,
-                              filters=64, kernel_size=(3, 3),
-                              strides=(1, 1), padding='same',
-                              activation=tf.nn.relu,
-                              kernel_regularizer=regularizer,
-                              name='cnn_conv2')
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
+        # conv1_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                 (32 * 16,               64,       64,       32        )
+            frame_cnn = tl.max_pooling2d(inputs=frame_cnn,
+                                         pool_size=(2, 2),
+                                         strides=(2, 2),
+                                         padding='valid',
+                                         name='cnn_pool1')
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
+        # pool1_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                 (32         * 16,       32,       32,       32        )
 
-        if use_batch_norm is True:
-            frame_cnn = tl.batch_normalization(inputs=frame_cnn,
-                                               training=is_training,
-                                               name='cnn_bn2')
-        if use_layer_norm is True:
-            frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
-    # conv2_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                 (32         * 16,       32,       32,       32       )
+            frame_cnn = tl.conv2d(inputs=frame_cnn,
+                                  filters=64, kernel_size=(3, 3),
+                                  strides=(1, 1), padding='same',
+                                  activation=tf.nn.relu,
+                                  kernel_regularizer=regularizer,
+                                  name='cnn_conv2')
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
 
-        frame_cnn = tl.conv2d(inputs=frame_cnn,
-                              filters=128, kernel_size=(3, 3),
-                              strides=(1, 1), padding='same',
-                              activation=tf.nn.relu,
-                              kernel_regularizer=regularizer,
-                              name='cnn_conv3')
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
+            if use_batch_norm is True:
+                frame_cnn = tl.batch_normalization(inputs=frame_cnn,
+                                                   training=is_training,
+                                                   name='cnn_bn2')
+            if use_layer_norm is True:
+                frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
+        # conv2_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                 (32         * 16,       32,       32,       32       )
 
-        if use_batch_norm is True:
-            frame_cnn = tl.batch_normalization(inputs=frame_cnn,
-                                               training=is_training,
-                                               name='cnn_bn3')
-        if use_layer_norm is True:
-            frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
-    # conv3a_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                  (32         * 16,        32,       32,       64      )
+            frame_cnn = tl.conv2d(inputs=frame_cnn,
+                                  filters=128, kernel_size=(3, 3),
+                                  strides=(1, 1), padding='same',
+                                  activation=tf.nn.relu,
+                                  kernel_regularizer=regularizer,
+                                  name='cnn_conv3')
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
 
-        frame_cnn = tl.max_pooling2d(inputs=frame_cnn,
-                                     pool_size=(2, 2),
-                                     strides=(2, 2),
-                                     padding='valid',
-                                     name='cnn_pool3')
+            if use_batch_norm is True:
+                frame_cnn = tl.batch_normalization(inputs=frame_cnn,
+                                                   training=is_training,
+                                                   name='cnn_bn3')
+            if use_layer_norm is True:
+                frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
+        # conv3a_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                  (32         * 16,        32,       32,       64      )
 
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
-    # pool3_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                 (32         * 8,        16,        16,        64       )
-        frame_cnn = tl.conv2d(inputs=frame_cnn,
-                              filters=128, kernel_size=(3, 3),
-                              strides=(1, 1), padding='same',
-                              activation=tf.nn.relu,
-                              kernel_regularizer=regularizer,
-                              name='cnn_conv4')
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
+            frame_cnn = tl.max_pooling2d(inputs=frame_cnn,
+                                         pool_size=(2, 2),
+                                         strides=(2, 2),
+                                         padding='valid',
+                                         name='cnn_pool3')
 
-        if use_batch_norm is True:
-            frame_cnn = tl.batch_normalization(inputs=frame_cnn,
-                                               training=is_training,
-                                               name='cnn_bn4')
-        if use_layer_norm is True:
-            frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
-    # conv4_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                  (32        * 8,        16,        16,       64       )
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
+        # pool3_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                 (32         * 8,        16,        16,        64       )
+            frame_cnn = tl.conv2d(inputs=frame_cnn,
+                                  filters=128, kernel_size=(3, 3),
+                                  strides=(1, 1), padding='same',
+                                  activation=tf.nn.relu,
+                                  kernel_regularizer=regularizer,
+                                  name='cnn_conv4')
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
 
-        frame_cnn = tl.max_pooling2d(inputs=frame_cnn,
-                                     pool_size=(2, 2),
-                                     strides=(2, 2),
-                                     padding='valid',
-                                     name='cnn_pool4')
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
+            if use_batch_norm is True:
+                frame_cnn = tl.batch_normalization(inputs=frame_cnn,
+                                                   training=is_training,
+                                                   name='cnn_bn4')
+            if use_layer_norm is True:
+                frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
+        # conv4_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                  (32        * 8,        16,        16,       64       )
 
-    # pool4_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                 (32         * 4,        8,        8,           64       )
-        frame_cnn = tl.conv2d(inputs=frame_cnn,
-                              filters=256, kernel_size=(3, 3),
-                              strides=(1, 1), padding='same',
-                              activation=tf.nn.relu,
-                              kernel_regularizer=regularizer,
-                              name='cnn_conv5')
-        if video_emb_layer_name == frame_cnn.name.split('/')[1]:
-            video_emb = tl.flatten(frame_cnn)
-            emb_dim = int(video_emb.shape[1])
+            frame_cnn = tl.max_pooling2d(inputs=frame_cnn,
+                                         pool_size=(2, 2),
+                                         strides=(2, 2),
+                                         padding='valid',
+                                         name='cnn_pool4')
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
 
-        if use_batch_norm is True:
-            frame_cnn = tl.batch_normalization(inputs=frame_cnn,
-                                               training=is_training,
-                                               name='cnn_bn5')
-        if use_layer_norm is True:
-            frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
-    # conv5_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                  (32        * 4,        8,        8,          128       )
+        # pool4_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                 (32         * 4,        8,        8,           64       )
+            frame_cnn = tl.conv2d(inputs=frame_cnn,
+                                  filters=256, kernel_size=(3, 3),
+                                  strides=(1, 1), padding='same',
+                                  activation=tf.nn.relu,
+                                  kernel_regularizer=regularizer,
+                                  name='cnn_conv5')
+            if video_emb_layer_name == frame_cnn.name.split('/')[1]:
+                video_emb = tl.flatten(frame_cnn)
+                emb_dim = int(video_emb.shape[1])
 
-        cnn_feats = tl.max_pooling2d(inputs=frame_cnn,
-                                     pool_size=(2, 2),
-                                     strides=(2, 2),
-                                     padding='valid',
-                                     name='cnn_pool5')
-        if video_emb_layer_name == cnn_feats.name.split('/')[1]:
-            video_emb = tl.flatten(cnn_feats)
-            emb_dim = int(video_emb.shape[1])
+            if use_batch_norm is True:
+                frame_cnn = tl.batch_normalization(inputs=frame_cnn,
+                                                   training=is_training,
+                                                   name='cnn_bn5')
+            if use_layer_norm is True:
+                frame_cnn = tf.contrib.layers.layer_norm(inputs=frame_cnn)
+        # conv5_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                  (32        * 4,        8,        8,          128       )
 
-    # pool5_output -> (batch_size * n_frames, img_size, img_size, n_channels)
-    #                 (32         * 2,        4,        4,        128       )
+            cnn_feats = tl.max_pooling2d(inputs=frame_cnn,
+                                         pool_size=(2, 2),
+                                         strides=(2, 2),
+                                         padding='valid',
+                                         name='cnn_pool5')
+            if video_emb_layer_name == cnn_feats.name.split('/')[1]:
+                video_emb = tl.flatten(cnn_feats)
+                emb_dim = int(video_emb.shape[1])
 
-        cnn_feats = tl.flatten(cnn_feats)
-        cnn_emb_dim = int(cnn_feats.shape[1])
+        # pool5_output -> (batch_size * n_frames, img_size, img_size, n_channels)
+        #                 (32         * 2,        4,        4,        128       )
 
-        if is_multilabel is True:
-            cnn_softmax_logits = tl.dense(inputs=cnn_feats,
-                                          units=2*n_classes,
-                                          activation=None,
-                                          kernel_regularizer=regularizer,
-                                          name='cnn_softmax_logits')
-            cnn_softmax_logits = tf.reshape(cnn_softmax_logits,
-                                            (-1, n_classes, 2))
+            cnn_feats = tl.flatten(cnn_feats)
+            cnn_emb_dim = int(cnn_feats.shape[1])
+
+            if is_multilabel is True:
+                cnn_softmax_logits = tl.dense(inputs=cnn_feats,
+                                              units=2*n_classes,
+                                              activation=None,
+                                              kernel_regularizer=regularizer,
+                                              name='cnn_softmax_logits')
+                cnn_softmax_logits = tf.reshape(cnn_softmax_logits,
+                                                (-1, n_classes, 2))
+            else:
+                cnn_softmax_logits = tl.dense(inputs=cnn_feats,
+                                              units=n_classes,
+                                              activation=None,
+                                              kernel_regularizer=regularizer,
+                                              name='cnn_softmax_logits')
+
+            if is_training is False:
+                cnn_softmax_logits = \
+                    tf.strided_slice(
+                        cnn_softmax_logits,
+                        [0, 0, 0], tf.shape(cnn_softmax_logits), [16, 1, 1],
+                        name='cnn_softmax_logits_last')
+
+            if cnn_softmax_logits.name.find(video_emb_layer_name) != -1:
+                video_emb = tl.flatten(cnn_softmax_logits)
+                emb_dim = int(video_emb.shape[1])
+
+            cnn_softmax_out = tf.nn.sigmoid(cnn_softmax_logits)
+            cnn_model = None
         else:
-            cnn_softmax_logits = tl.dense(inputs=cnn_feats,
-                                          units=n_classes,
-                                          activation=None,
-                                          kernel_regularizer=regularizer,
-                                          name='cnn_softmax_logits')
+            if pretrained_cnn.find('mobilenet') != -1:
+                cnn_inputs = tf.image.resize_images(cnn_inputs, (224, 224))
+                cnn_inputs = tf.tile(cnn_inputs, [1, 1, 1, 3])
+                cnn_model = nets.MobileNet50v2(cnn_inputs)
 
-        if is_training is False:
-            cnn_softmax_logits = \
-                tf.strided_slice(
-                    cnn_softmax_logits,
-                    [0, 0, 0], tf.shape(cnn_softmax_logits), [16, 1, 1],
-                    name='cnn_softmax_logits_last')
+                cnn_feats = cnn_model.get_outputs()[-3]
+                cnn_emb_dim = int(cnn_feats.shape[1])
 
-        if cnn_softmax_logits.name.find(video_emb_layer_name) != -1:
-            video_emb = tl.flatten(cnn_softmax_logits)
-            emb_dim = int(video_emb.shape[1])
+                cnn_softmax_logits = cnn_model.get_outputs()[-2]
+                cnn_softmax_out = cnn_model.get_outputs()[-1]
+            elif pretrained_cnn.find('mnist') != -1:
+                cnn_inputs = tf.image.resize_images(cnn_inputs, (28, 28))
+                cnn_inputs = tl.flatten(cnn_inputs)
 
-        cnn_softmax_out = tf.nn.sigmoid(cnn_softmax_logits)
+                cnn_model = \
+                    tf.train.import_meta_graph(
+                        'pretrained_models/mnist_model/model.ckpt-24000.meta',
+                        input_map={"reshape_input:0": cnn_inputs})
+                g = tf.get_default_graph()
+
+                cnn_feats = g.get_tensor_by_name('cnn/dense/Relu:0')
+                cnn_emb_dim = int(cnn_feats.shape[1])
+
+                cnn_softmax_logits = \
+                    g.get_tensor_by_name('cnn/dense_1/BiasAdd:0')
+                cnn_softmax_out = tf.sigmoid(cnn_softmax_logits)
+            elif pretrained_cnn.find('.meta') != -1:
+                raise NotImplementedError
+            else:
+                raise NotImplementedError
 
     cnn_vars = tf.contrib.framework.get_variables(vs)
 
@@ -271,4 +307,5 @@ def def_cnnlstm_small_video_classifier(inputs,
     return (cnn_softmax_out, softmax_out), \
         (cnn_softmax_logits, softmax_logits), \
         (cnn_feats, video_emb), (cnn_vars, lstm_vars), \
-        (cnn_emb_dim, emb_dim)
+        (cnn_emb_dim, emb_dim), \
+        cnn_model
