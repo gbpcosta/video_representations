@@ -43,7 +43,7 @@ class VideoRep():
                  model_id, model_name, model_type,
                  dataset_name, class_velocity, hide_digits,
                  tr_size, val_size,
-                 use_batch_norm, use_layer_norm, use_l2_reg,
+                 use_batch_norm, use_layer_norm, use_l2_reg, pretrained_cnn,
                  epoch, batch_size, learning_rate,
                  svm_analysis, vis_epoch, plot_individually, verbosity,
                  checkpoint_epoch, keep_checkpoint_max, redo,
@@ -75,6 +75,7 @@ class VideoRep():
         self.use_batch_norm = use_batch_norm
         self.use_layer_norm = use_layer_norm
         self.use_l2_reg = use_l2_reg
+        self.pretrained_cnn = pretrained_cnn
 
         self.epoch = epoch
         self.batch_size = batch_size
@@ -137,6 +138,9 @@ class VideoRep():
 
         self.saver = tf.train.Saver(max_to_keep=keep_checkpoint_max)
 
+        self.bestacc_saver = tf.train.Saver(max_to_keep=1)
+        self.bestacc = 0
+
         if not self.redo:
             latest_checkpoint = tf.train.latest_checkpoint(self.model_dir)
 
@@ -161,6 +165,11 @@ class VideoRep():
                     self.val_loss = pd.read_hdf(
                         os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
                         'val_cnn_loss').values \
+                        .flatten()
+
+                    self.tr_net_acc = pd.read_hdf(
+                        os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                        'tr_cnn_net_acc').values \
                         .flatten()
 
                     self.val_net_acc = pd.read_hdf(
@@ -191,8 +200,15 @@ class VideoRep():
                             .flatten()
 
                         if self.is_ae is False:
+                            self.tr_net_acc = pd.read_hdf(
+                                os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
+                                'tr_net_acc').values \
+                                .flatten()
+
                             self.val_net_acc = pd.read_hdf(
-                                os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                                os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
                                 'val_net_acc').values \
                                 .flatten()
 
@@ -202,7 +218,8 @@ class VideoRep():
                             #     'val_auc').values
 
                             self.val_acc = pd.read_hdf(
-                                os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
+                                os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
                                 'val_acc').values
                     except KeyError:
                         trained_cnn = True
@@ -222,6 +239,7 @@ class VideoRep():
             self.val_loss = np.array([])
 
             if self.is_ae is False:
+                self.tr_net_acc = np.array([])
                 self.val_net_acc = np.array([])
 
             if self.svm_analysis:
@@ -250,20 +268,22 @@ class VideoRep():
         else:  # binary_crossentropy
             if self.is_cnn_lstm:
                 if self.is_multilabel:
-                    self.cnn_loss = tf.reduce_mean(tf.reduce_sum(
-                        tf.nn.sigmoid_cross_entropy_with_logits(
-                            logits=self.cnn_net_out_logits,
-                            labels=self.frame_labels), axis=1))
+                    if not self.pretrained_cnn:
+                        self.cnn_loss = tf.reduce_mean(tf.reduce_sum(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.cnn_net_out_logits,
+                                labels=self.frame_labels), axis=1))
 
                     self.loss = tf.reduce_mean(tf.reduce_sum(
                         tf.nn.sigmoid_cross_entropy_with_logits(
                             logits=self.net_out_logits,
                             labels=self.frame_labels), axis=1))
                 else:
-                    self.cnn_loss = tf.reduce_mean(
-                        tf.nn.sigmoid_cross_entropy_with_logits(
-                            logits=self.cnn_net_out_logits,
-                            labels=self.frame_labels))
+                    if not self.pretrained_cnn:
+                        self.cnn_loss = tf.reduce_mean(
+                            tf.nn.sigmoid_cross_entropy_with_logits(
+                                logits=self.cnn_net_out_logits,
+                                labels=self.frame_labels))
 
                     self.loss = tf.reduce_mean(
                         tf.nn.sigmoid_cross_entropy_with_logits(
@@ -289,20 +309,22 @@ class VideoRep():
             else:  # binary_crossentropy
                 if self.is_cnn_lstm:
                     if self.is_multilabel:
-                        self.test_cnn_loss = tf.reduce_mean(tf.reduce_sum(
-                            tf.nn.sigmoid_cross_entropy_with_logits(
-                                logits=self.test_cnn_net_out_logits,
-                                labels=self.labels), axis=1))
+                        if not self.pretrained_cnn:
+                            self.test_cnn_loss = tf.reduce_mean(tf.reduce_sum(
+                                tf.nn.sigmoid_cross_entropy_with_logits(
+                                    logits=self.test_cnn_net_out_logits,
+                                    labels=self.labels), axis=1))
 
                         self.test_loss = tf.reduce_mean(tf.reduce_sum(
                             tf.nn.sigmoid_cross_entropy_with_logits(
                                 logits=self.test_net_out_logits,
                                 labels=self.labels), axis=1))
                     else:
-                        self.test_cnn_loss = tf.reduce_mean(
-                            tf.nn.sigmoid_cross_entropy_with_logits(
-                                logits=self.test_cnn_net_out_logits,
-                                labels=self.labels))
+                        if not self.pretrained_cnn:
+                            self.test_cnn_loss = tf.reduce_mean(
+                                tf.nn.sigmoid_cross_entropy_with_logits(
+                                    logits=self.test_cnn_net_out_logits,
+                                    labels=self.labels))
 
                         self.test_loss = tf.reduce_mean(
                             tf.nn.sigmoid_cross_entropy_with_logits(
@@ -324,11 +346,12 @@ class VideoRep():
         with tf.control_dependencies(
                 tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
             if self.is_cnn_lstm:
-                self.cnn_optim = \
-                    tf.train.AdamOptimizer(learning_rate=self.learning_rate,
-                                           beta1=self.beta1) \
-                    .minimize(self.cnn_loss,
-                              var_list=self.cnn_vars)
+                if not self.pretrained_cnn:
+                    self.cnn_optim = \
+                        tf.train.AdamOptimizer(learning_rate=self.learning_rate,
+                                               beta1=self.beta1) \
+                        .minimize(self.cnn_loss,
+                                  var_list=self.cnn_vars)
                 self.optim = \
                     tf.train.AdamOptimizer(learning_rate=self.learning_rate,
                                            beta1=self.beta1) \
@@ -380,7 +403,10 @@ class VideoRep():
         self.get_onehot_labels = \
             tf.squeeze(tf.nn.top_k(self.labels).indices)
 
-        if self.model_type.find('cnn_lstm') != -1:
+        if self.is_cnn_lstm:
+            if self.pretrained_cnn:
+                pass
+
             if self.is_multilabel:
                 frame_labels = tf.expand_dims(self.labels, axis=1)
 
@@ -483,14 +509,16 @@ class VideoRep():
                 (self.cnn_net_out_logits, self.net_out_logits), \
                 (self.cnn_feats, self.video_emb), \
                 (self.cnn_vars, self.lstm_vars), \
-                (self.cnn_emb_dim, self.emb_dim) = \
+                (self.cnn_emb_dim, self.emb_dim), \
+                self.cnn_model = \
                 def_cnnlstm_small_video_classifier(
                     self.video, n_classes=self.n_classes,
                     is_training=True, is_multilabel=self.is_multilabel,
                     reuse=False,
                     use_l2_reg=self.use_l2_reg,
                     use_batch_norm=self.use_batch_norm,
-                    use_layer_norm=self.use_layer_norm)
+                    use_layer_norm=self.use_layer_norm,
+                    pretrained_cnn=self.pretrained_cnn)
         elif self.model_type == 'gru_ae_small':
             self.net_out, \
                 self.net_out_logits, \
@@ -641,14 +669,16 @@ class VideoRep():
                      self.test_net_out_logits),\
                     (self.test_cnn_feats, self.test_video_emb), \
                     (self.test_cnn_vars, self.test_lstm_vars), \
-                    (self.cnn_emb_dim, self.emb_dim) = \
+                    (self.cnn_emb_dim, self.emb_dim), \
+                    self.cnn_model = \
                     def_cnnlstm_small_video_classifier(
                         self.video, n_classes=self.n_classes,
                         is_training=False, is_multilabel=self.is_multilabel,
                         reuse=True,
                         use_l2_reg=self.use_l2_reg,
                         use_batch_norm=self.use_batch_norm,
-                        use_layer_norm=self.use_layer_norm)
+                        use_layer_norm=self.use_layer_norm,
+                        pretrained_cnn=self.pretrained_cnn)
             elif self.model_type == 'gru_ae_small':
                 self.test_net_out, \
                     self.test_net_out_logits, \
@@ -806,6 +836,19 @@ class VideoRep():
                 tr_labels = np.vstack([tr_labels, labels])
                 if self.is_ae is False:
                     tr_pred = np.vstack([tr_pred, pred])
+
+            if self.is_ae is False:
+                self.tr_net_acc = np.append(
+                    self.tr_net_acc,
+                    accuracy_score(tr_labels, tr_pred))
+
+            if self.bestacc < self.tr_net_acc[-1]:
+                self.bestacc_saver.save(
+                    self.sess,
+                    os.path.join(
+                        self.model_dir,
+                        'cnn_bestacc_model-epoch'),
+                    global_step=epoch)
 
             # Validation and Visualization
             val_video_emb = np.array([], dtype=np.float32) \
@@ -1006,6 +1049,7 @@ class VideoRep():
 
                 else:
                     metrics_list = [self.plt_loss,
+                                    self.tr_net_acc,
                                     self.val_net_acc,
                                     pca_video_proj1,
                                     pca_video_proj2,
@@ -1016,13 +1060,16 @@ class VideoRep():
                     iterations_list = [list(range(1, (self.current_epoch
                                                       * self.num_batches)+1)),
                                        list(range(1, self.current_epoch+1)),
+                                       list(range(1, self.current_epoch+1)),
                                        None, None, None, None,
                                        None, None]
-                    plt_types = ['lines', 'lines', 'scatter', 'scatter',
+                    plt_types = ['lines', 'lines', 'lines',
+                                 'scatter', 'scatter',
                                  'scatter', 'scatter', 'scatter',
                                  'scatter']
                     metric_names = ['Loss',
-                                    'Network Accuracy',
+                                    'Training Network Accuracy',
+                                    'Validation Network Accuracy',
                                     'PCA Video Projection 1',
                                     'PCA Video Projection 2',
                                     'LDA Video Projection 1',
@@ -1159,6 +1206,15 @@ class VideoRep():
 
                 if self.is_ae is False:
                     pd.DataFrame(
+                        self.tr_net_acc[-self.checkpoint_epoch:],
+                        index=list(range(max(1, epoch-self.checkpoint_epoch+1),
+                                         epoch+1))) \
+                        .to_hdf(os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
+                                'tr_cnn_net_acc',
+                                append=True, format='table')
+
+                    pd.DataFrame(
                         self.val_net_acc[-self.checkpoint_epoch:],
                         index=list(range(max(1, epoch-self.checkpoint_epoch+1),
                                          epoch+1))) \
@@ -1204,15 +1260,27 @@ class VideoRep():
 
         if self.is_cnn_lstm and self.training_cnn:
             # train cnn first
-            if self.verbosity >= 1:
-                print('Training CNN first!')
-            self.train_cnn()
+            if self.pretrained_cnn.find('mobilenet') != -1:
+                self.sess.run(self.cnn_model.pretrained())
+            elif self.pretrained_cnn.find('mnist') != -1:
+                self.cnn_model.restore(
+                    self.sess,
+                    tf.train.latest_checkpoint(
+                        os.path.dirname('pretrained_models/mnist_model'
+                                        '/model.ckpt-24000.meta')))
+            elif not self.pretrained_cnn:
+                if self.verbosity >= 1:
+                    print('Training CNN first!')
+                self.train_cnn()
+            else:
+                raise NotImplementedError
 
             self.training_cnn = False
             self.current_epoch = 1
 
         self.plt_loss = np.array([])
         self.val_loss = np.array([])
+        self.tr_net_acc = np.array([])
         self.val_net_acc = np.array([])
         self.val_acc = np.array([]).reshape(0, self.n_classes)
 
@@ -1303,6 +1371,19 @@ class VideoRep():
                 tr_labels = np.vstack([tr_labels, labels])
                 if self.is_ae is False:
                     tr_pred = np.vstack([tr_pred, pred])
+
+            if self.is_ae is False:
+                self.tr_net_acc = np.append(
+                    self.tr_net_acc,
+                    accuracy_score(tr_labels, tr_pred))
+
+            if self.bestacc < self.tr_net_acc[-1]:
+                self.bestacc_saver.save(
+                    self.sess,
+                    os.path.join(
+                        self.model_dir,
+                        'bestacc_model-epoch'),
+                    global_step=epoch)
 
             # Validation and Visualization
             val_video_emb = np.array([], dtype=np.float32) \
@@ -1505,6 +1586,7 @@ class VideoRep():
 
                 else:
                     metrics_list = [self.plt_loss,
+                                    self.tr_net_acc,
                                     self.val_net_acc,
                                     pca_video_proj1,
                                     pca_video_proj2,
@@ -1515,13 +1597,16 @@ class VideoRep():
                     iterations_list = [list(range(1, (self.current_epoch
                                                       * self.num_batches)+1)),
                                        list(range(1, self.current_epoch+1)),
+                                       list(range(1, self.current_epoch+1)),
                                        None, None, None, None,
                                        None, None]
-                    plt_types = ['lines', 'lines', 'scatter', 'scatter',
+                    plt_types = ['lines', 'lines', 'lines',
+                                 'scatter', 'scatter',
                                  'scatter', 'scatter', 'scatter',
                                  'scatter']
                     metric_names = ['Loss',
-                                    'Network Accuracy',
+                                    'Training Network Accuracy',
+                                    'Validation Network Accuracy',
                                     'PCA Video Projection 1',
                                     'PCA Video Projection 2',
                                     'LDA Video Projection 1',
@@ -1643,6 +1728,15 @@ class VideoRep():
                             append=True, format='table')
 
                 if self.is_ae is False:
+                    pd.DataFrame(
+                        self.tr_net_acc[-self.checkpoint_epoch:],
+                        index=list(range(max(1, epoch-self.checkpoint_epoch+1),
+                                         epoch+1))) \
+                        .to_hdf(os.path.join(self.model_dir,
+                                             'plt_loss_bkup.h5'),
+                                'tr_net_acc',
+                                append=True, format='table')
+
                     pd.DataFrame(
                         self.val_net_acc[-self.checkpoint_epoch:],
                         index=list(range(max(1, epoch-self.checkpoint_epoch+1),
@@ -1782,6 +1876,7 @@ if __name__ == "__main__":
                      use_batch_norm=args.use_batch_norm,
                      use_layer_norm=args.use_layer_norm,
                      use_l2_reg=args.use_l2_reg,
+                     pretrained_cnn=args.pretrained_cnn,
                      epoch=args.epoch,
                      batch_size=args.batch_size,
                      learning_rate=args.learning_rate,
