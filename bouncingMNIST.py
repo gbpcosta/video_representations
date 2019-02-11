@@ -20,7 +20,6 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
                             'video_representations/datasets/mnist/mnist.h5'):
         self.seq_length_ = seq_length
         self.batch_size_ = batch_size
-        self.image_size_ = image_size
         self.num_digits_ = num_digits
         self.class_velocity = class_velocity
         self.hide_digits = hide_digits
