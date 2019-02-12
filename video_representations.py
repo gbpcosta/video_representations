@@ -927,6 +927,9 @@ class VideoRep():
                     self.val_net_acc,
                     accuracy_score(val_labels, val_pred))
 
+            print('VAL LABELS SHAPE: {}'.format(val_labels.shape))
+            print('VAL PRED SHAPE: {}'.format(val_pred.shape))
+
             self.validation_generator.on_epoch_end()
 
             ###################################################################
@@ -945,15 +948,15 @@ class VideoRep():
                                 [1, video_batch.shape[1], 1])
                     tr_labels = tr_labels.reshape([-1, self.n_classes])
 
-                    val_labels = np.expand_dims(val_labels, axis=1)
-                    val_labels = \
-                        np.tile(val_labels,
+                    svm_val_labels = np.expand_dims(val_labels, axis=1)
+                    svm_val_labels = \
+                        np.tile(svm_val_labels,
                                 [1, video_batch.shape[1], 1])
-                    val_labels = val_labels.reshape([-1, self.n_classes])
+                    svm_val_labels = svm_val_labels.reshape([-1, self.n_classes])
 
                     val_acc, valid_classes = \
                         self.svm.compute(train_data=(tr_video_emb, tr_labels),
-                                         val_data=(val_video_emb, val_labels))
+                                         val_data=(val_video_emb, svm_val_labels))
                     self.val_acc = np.vstack([self.val_acc, val_acc])
                     # self.val_auc = np.vstack([self.val_auc, val_auc])
 
@@ -1390,7 +1393,6 @@ class VideoRep():
 
             tr_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
-
             tr_labels = np.array([], dtype=np.float32) \
                 .reshape(0, self.n_classes)
             tr_pred = np.array([], dtype=np.float32) \
@@ -1451,7 +1453,7 @@ class VideoRep():
                     self.tr_net_acc,
                     accuracy_score(tr_labels, tr_pred))
 
-            self.validation_generator.on_epoch_end()
+            self.training_generator.on_epoch_end()
 
             ###################################################################
             # Best Accuracy Checkpoint
@@ -1472,7 +1474,6 @@ class VideoRep():
 
             val_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
-
             val_labels = np.array([], dtype=np.float32) \
                 .reshape(0, self.n_classes)
             val_pred = np.array([], dtype=np.float32) \
