@@ -15,7 +15,8 @@ from parse_config import parse_args
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
+
 
 from models_c3d import def_c3d_large_video_ae, \
                        def_c3d_small_video_ae, \
@@ -772,20 +773,10 @@ class VideoRep():
                 size=self.validation_generator.dataset_size_)
 
         for epoch in tqdm(range(starting_epoch, self.epoch+1), position=1):
-            # Training
-            tr_video_emb = np.array([], dtype=np.float32) \
-                .reshape(0, self.cnn_emb_dim)
 
-            # if self.is_multilabel:
-            #     tr_labels = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes)
-            #     tr_pred = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes)
-            # else:
-            tr_labels = np.array([], dtype=np.float32) \
-                .reshape(0, self.n_classes)
-            tr_pred = np.array([], dtype=np.float32) \
-                .reshape(0, self.n_classes)
+            ###################################################################
+            # Training
+            ###################################################################
 
             for batch_number in tqdm(range(1, self.num_batches+1),
                                      position=0):
@@ -799,10 +790,9 @@ class VideoRep():
 
                     labels = np.stack([inverted_labels, labels], axis=2)
 
-                _, loss, net_out = \
+                _, loss = \
                     self.sess.run([self.cnn_optim,
-                                   self.cnn_loss,
-                                   self.cnn_net_out],
+                                   self.cnn_loss],
                                   feed_dict={self.video: video_batch,
                                              self.labels: labels})
 
@@ -814,6 +804,30 @@ class VideoRep():
                              loss))
 
                 self.plt_loss = np.append(self.plt_loss, loss)
+
+            self.training_generator.on_epoch_end()
+
+            ###################################################################
+            # Training Evaluation
+            ###################################################################
+
+            tr_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.cnn_emb_dim)
+            tr_labels = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+            tr_pred = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+
+            for batch_number in tqdm(range(self.val_num_batches), position=0):
+                video_batch, labels = \
+                    self.training_generator.get_batch()
+
+                if self.is_multilabel:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
 
                 if self.use_batch_norm:
                     video_emb, labels, pred = \
@@ -834,6 +848,7 @@ class VideoRep():
 
                 tr_video_emb = np.vstack([tr_video_emb, video_emb])
                 tr_labels = np.vstack([tr_labels, labels])
+
                 if self.is_ae is False:
                     tr_pred = np.vstack([tr_pred, pred])
 
@@ -841,6 +856,12 @@ class VideoRep():
                 self.tr_net_acc = np.append(
                     self.tr_net_acc,
                     accuracy_score(tr_labels, tr_pred))
+
+            self.training_generator.on_epoch_end()
+
+            ###################################################################
+            # Best Accuracy Checkpoint
+            ###################################################################
 
             if self.bestacc < self.tr_net_acc[-1]:
                 self.bestacc_saver.save(
@@ -850,16 +871,13 @@ class VideoRep():
                         'cnn_bestacc_model-epoch'),
                     global_step=epoch)
 
-            # Validation and Visualization
+            ###################################################################
+            # Validation
+            ###################################################################
+
             val_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.cnn_emb_dim)
 
-            # if self.is_multilabel:
-            #     val_labels = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes, 2)
-            #     val_pred = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes, 2)
-            # else:
             val_labels = np.array([], dtype=np.float32) \
                 .reshape(0, self.n_classes)
             val_pred = np.array([], dtype=np.float32) \
@@ -910,6 +928,10 @@ class VideoRep():
                     accuracy_score(val_labels, val_pred))
 
             self.validation_generator.on_epoch_end()
+
+            ###################################################################
+            # Visualisation
+            ###################################################################
 
             if epoch % self.vis_epoch == 0 or \
                     epoch == 1 or \
@@ -1158,6 +1180,43 @@ class VideoRep():
                     #                               .format(epoch)),
                     #         bot=None)
 
+                confusion_matrices = []
+                confusion_matrices_names = []
+                for ii in range(self.n_classes):
+                    confusion_matrices.append(
+                        [confusion_matrix(val_labels[:, ii],
+                                          val_pred[:, ii]),
+                         [-1, ii]])
+                    confusion_matrices_names.append(
+                        'Confusion Matrix - Class {}'.format(ii))
+
+                plot_metrics(
+                    metrics_list=confusion_matrices,
+                    iterations_list=[None] * self.n_classes,
+                    types=['confusion-matrix'] * self.n_classes,
+                    metric_names=confusion_matrices_names,
+                    legend=True,
+                    savefile=os.path.join(self.plt_dir,
+                                          'cnn_cm_epoch{}.png'
+                                          .format(epoch)),
+                    bot=self.bot)
+
+                if self.plot_individually:
+                    plot_metrics_individually(
+                        metrics_list=confusion_matrices,
+                        iterations_list=[None] * self.n_classes,
+                        types=['confusion-matrix'] * self.n_classes,
+                        metric_names=confusion_matrices_names,
+                        legend=True,
+                        savefile=os.path.join(self.plt_dir,
+                                              'cnn_cm_epoch{}.png'
+                                              .format(epoch)),
+                        bot=None)
+
+            ##################################################################
+            # Checkpoints
+            ##################################################################
+
             if epoch % self.checkpoint_epoch == 0 or \
                     epoch == self.epoch:
                 n_epochs = self.checkpoint_epoch
@@ -1291,20 +1350,10 @@ class VideoRep():
                     append=False)
 
         for epoch in tqdm(range(starting_epoch, self.epoch+1), position=1):
-            # Training
-            tr_video_emb = np.array([], dtype=np.float32) \
-                .reshape(0, self.emb_dim)
 
-            # if self.is_multilabel:
-            #     tr_labels = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes)
-            #     tr_pred = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes)
-            # else:
-            tr_labels = np.array([], dtype=np.float32) \
-                .reshape(0, self.n_classes)
-            tr_pred = np.array([], dtype=np.float32) \
-                .reshape(0, self.n_classes)
+            ###################################################################
+            # Training
+            ###################################################################
 
             for batch_number in tqdm(range(1, self.num_batches+1),
                                      position=0):
@@ -1318,10 +1367,9 @@ class VideoRep():
 
                     labels = np.stack([inverted_labels, labels], axis=2)
 
-                _, loss, net_out = \
+                _, loss = \
                     self.sess.run([self.optim,
-                                   self.loss,
-                                   self.net_out],
+                                   self.loss],
                                   feed_dict={self.video: video_batch,
                                              self.labels: labels})
 
@@ -1334,41 +1382,67 @@ class VideoRep():
 
                 self.plt_loss = np.append(self.plt_loss, loss)
 
+            self.training_generator.on_epoch_end()
+
+            ###################################################################
+            # Training evaluation
+            ###################################################################
+
+            tr_video_emb = np.array([], dtype=np.float32) \
+                .reshape(0, self.emb_dim)
+
+            tr_labels = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+            tr_pred = np.array([], dtype=np.float32) \
+                .reshape(0, self.n_classes)
+
+            for batch_number in tqdm(range(self.val_num_batches), position=0):
+                video_batch, labels = \
+                    self.training_generator.get_batch()
+
+                if self.is_multilabel:
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
                 if self.is_ae:
                     if self.use_batch_norm:
-                        video_emb, labels = \
+                        labels, video_emb = \
                             self.sess.run(
-                                [self.test_video_emb,
-                                 self.get_onehot_test_labels],
+                                [self.get_onehot_labels,
+                                 self.test_video_emb],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
-                        video_emb, labels = \
+                        labels, video_emb = \
                             self.sess.run(
-                                [self.video_emb,
-                                 self.get_onehot_labels],
+                                [self.get_onehot_labels,
+                                 self.video_emb],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                 else:
                     if self.use_batch_norm:
-                        video_emb, labels, pred = \
+                        labels, pred, video_emb = \
                             self.sess.run(
-                                [self.test_video_emb,
-                                 self.get_onehot_labels,
-                                 self.get_onehot_test_pred],
+                                [self.get_onehot_labels,
+                                 self.get_onehot_test_pred,
+                                 self.test_video_emb],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
-                        video_emb, labels, pred = \
+                        labels, pred, video_emb = \
                             self.sess.run(
-                                [self.video_emb,
-                                 self.get_onehot_labels,
-                                 self.get_onehot_pred],
+                                [self.get_onehot_labels,
+                                 self.get_onehot_pred,
+                                 self.video_emb],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
 
                 tr_video_emb = np.vstack([tr_video_emb, video_emb])
                 tr_labels = np.vstack([tr_labels, labels])
+
                 if self.is_ae is False:
                     tr_pred = np.vstack([tr_pred, pred])
 
@@ -1377,7 +1451,14 @@ class VideoRep():
                     self.tr_net_acc,
                     accuracy_score(tr_labels, tr_pred))
 
+            self.validation_generator.on_epoch_end()
+
+            ###################################################################
+            # Best Accuracy Checkpoint
+            ###################################################################
+
             if self.bestacc < self.tr_net_acc[-1]:
+                self.bestacc = self.tr_net_acc[-1]
                 self.bestacc_saver.save(
                     self.sess,
                     os.path.join(
@@ -1385,23 +1466,17 @@ class VideoRep():
                         'bestacc_model-epoch'),
                     global_step=epoch)
 
-            # Validation and Visualization
+            ###################################################################
+            # Validation
+            ###################################################################
+
             val_video_emb = np.array([], dtype=np.float32) \
                 .reshape(0, self.emb_dim)
 
-            # if self.is_multilabel:
-            #     val_labels = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes, 2)
-            #     val_pred = np.array([], dtype=np.float32) \
-            #         .reshape(0, self.n_classes, 2)
-            # else:
             val_labels = np.array([], dtype=np.float32) \
                 .reshape(0, self.n_classes)
             val_pred = np.array([], dtype=np.float32) \
                 .reshape(0, self.n_classes)
-
-            # if self.is_ae is False:
-            #     self.sess.run([self.init_eval_vars])
 
             for batch_number in tqdm(range(self.val_num_batches), position=0):
                 video_batch, labels = \
@@ -1414,41 +1489,39 @@ class VideoRep():
 
                     labels = np.stack([inverted_labels, labels], axis=2)
 
-                if self.use_batch_norm:
-                    loss, net_out, video_emb = \
-                        self.sess.run(
-                            [self.test_loss,
-                             self.test_net_out,
-                             self.test_video_emb],
-                            feed_dict={self.video: video_batch,
-                                       self.labels: labels})
-                else:
-                    loss, net_out, video_emb = \
-                        self.sess.run(
-                            [self.loss,
-                             self.net_out,
-                             self.video_emb],
-                            feed_dict={self.video: video_batch,
-                                       self.labels: labels})
-
                 if self.is_ae:
-                    labels = \
-                        self.sess.run(
-                            self.get_onehot_labels,
-                            feed_dict={self.video: video_batch,
-                                       self.labels: labels})
+                    if self.use_batch_norm:
+                        loss, video_emb, labels = \
+                            self.sess.run(
+                                [self.test_loss,
+                                 self.test_video_emb,
+                                 self.get_onehot_labels],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
+                    else:
+                        loss, video_emb, labels = \
+                            self.sess.run(
+                                [self.loss,
+                                 self.video_emb,
+                                 self.get_onehot_labels],
+                                feed_dict={self.video: video_batch,
+                                           self.labels: labels})
                 else:
                     if self.use_batch_norm:
-                        labels, pred = \
+                        loss, video_emb, labels, pred = \
                             self.sess.run(
-                                [self.get_onehot_labels,
+                                [self.test_loss,
+                                 self.test_video_emb,
+                                 self.get_onehot_labels,
                                  self.get_onehot_test_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
                     else:
-                        labels, pred = \
+                        loss, video_emb, labels, pred = \
                             self.sess.run(
-                                [self.get_onehot_labels,
+                                [self.loss,
+                                 self.video_emb,
+                                 self.get_onehot_labels,
                                  self.get_onehot_pred],
                                 feed_dict={self.video: video_batch,
                                            self.labels: labels})
@@ -1456,6 +1529,7 @@ class VideoRep():
                 self.val_loss = np.append(self.val_loss, loss)
                 val_video_emb = np.vstack([val_video_emb, video_emb])
                 val_labels = np.vstack([val_labels, labels])
+
                 if self.is_ae is False:
                     val_pred = np.vstack([val_pred, pred])
 
@@ -1463,7 +1537,12 @@ class VideoRep():
                 self.val_net_acc = np.append(
                     self.val_net_acc,
                     accuracy_score(val_labels, val_pred))
+
             self.validation_generator.on_epoch_end()
+
+            ##################################################################
+            # Visualisation
+            ##################################################################
 
             if epoch % self.vis_epoch == 0 or \
                     epoch == 1 or \
@@ -1686,6 +1765,42 @@ class VideoRep():
                     #                               'auc_epoch{}.png'
                     #                               .format(epoch)),
                     #         bot=None)
+
+                confusion_matrices = []
+                confusion_matrices_names = []
+                for ii in range(self.n_classes):
+                    confusion_matrices.append(
+                        [confusion_matrix(val_labels[:, ii], val_pred[:, ii]),
+                         [-1, ii]])
+                    confusion_matrices_names.append(
+                        'Confusion Matrix - Class {}'.format(ii))
+
+                plot_metrics(
+                    metrics_list=confusion_matrices,
+                    iterations_list=[None] * self.n_classes,
+                    types=['confusion-matrix'] * self.n_classes,
+                    metric_names=confusion_matrices_names,
+                    legend=True,
+                    savefile=os.path.join(self.plt_dir,
+                                          'cm_epoch{}.png'
+                                          .format(epoch)),
+                    bot=self.bot)
+
+                if self.plot_individually:
+                    plot_metrics_individually(
+                        metrics_list=confusion_matrices,
+                        iterations_list=[None] * self.n_classes,
+                        types=['confusion-matrix'] * self.n_classes,
+                        metric_names=confusion_matrices_names,
+                        legend=True,
+                        savefile=os.path.join(self.plt_dir,
+                                              'cm_epoch{}.png'
+                                              .format(epoch)),
+                        bot=None)
+
+            ##################################################################
+            # Checkpoints
+            ##################################################################
 
             if epoch % self.checkpoint_epoch == 0 or \
                     epoch == self.epoch:
