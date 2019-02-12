@@ -927,9 +927,6 @@ class VideoRep():
                     self.val_net_acc,
                     accuracy_score(val_labels, val_pred))
 
-            print('VAL LABELS SHAPE: {}'.format(val_labels.shape))
-            print('VAL PRED SHAPE: {}'.format(val_pred.shape))
-
             self.validation_generator.on_epoch_end()
 
             ###################################################################
