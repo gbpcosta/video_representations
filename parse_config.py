@@ -426,7 +426,8 @@ def check_args(args):
     # NETWORK ARCHITECTURE
     # TODO assert pretrained_cnn is either a model file or empty string
     assert (args.pretrained_cnn.find('.meta') != -1) \
-        | (args.pretrained_cnn in ['mobilenet', 'mnist']), \
+        | (args.pretrained_cnn in ['mobilenet', 'mnist']) \
+        | (not args.pretrained_cnn), \
         'pretrained_cnn needs to be and empty string, the path to a ' \
         '.meta file or a preset model [mobilnet, mnist].'
 
