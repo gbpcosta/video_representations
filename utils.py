@@ -1,4 +1,5 @@
 import os
+import itertools
 import numpy as np
 
 from sklearn.svm import LinearSVC
@@ -128,6 +129,32 @@ def plot_metrics(metrics_list, iterations_list, types, savefile,
                                     interpolation='none',
                                     vmin=0.0, vmax=1.0)
                 inner_ax.axis('off')
+        elif types[ii] == 'confusion-matrix':
+            ax = plt.subplot(current_cell)
+            cmap = plt.cm.Blues
+            cm_norm = metric[0].astype('float') \
+                / metric[0].sum(axis=1)[:, np.newaxis]
+            im = ax.imshow(cm_norm, interpolation='nearest', cmap=cmap)
+            # cbar = ax.colorbar()
+            cbar = fig.colorbar(im, ax=ax)
+            cbar.set_label('Percentage', rotation=90)
+            tick_marks = np.arange(len(metric[1]))
+            plt.sca(ax)
+            plt.title(metric_names[ii])
+            plt.xticks(tick_marks, metric[1], rotation=45)
+            plt.yticks(tick_marks, metric[1])
+
+            fmt = 'd'
+            thresh = cm_norm.max() / 2.
+            for i, j in itertools.product(range(metric[0].shape[0]),
+                                          range(metric[0].shape[1])):
+                ax.text(j, i, format(metric[0][i, j], fmt),
+                        horizontalalignment='center',
+                        color="white" if cm_norm[i, j] > thresh else 'black')
+
+            plt.ylabel('True label')
+            plt.xlabel('Predicted label')
+            plt.tight_layout()
 
         if ax is not None:
             if x_label is not None and \
@@ -231,10 +258,35 @@ def plot_metrics_individually(metrics_list, iterations_list, types, savefile,
                               interpolation='none',
                               vmin=0.0, vmax=1.0)
                 ax.axis('off')
+        elif types[ii] == 'confusion-matrix':
+            ax = fig.add_subplot(1, 1, 1)
+            cmap = plt.cm.Blues
+            cm_norm = metric[0].astype('float') \
+                / metric[0].sum(axis=1)[:, np.newaxis]
+            im = ax.imshow(cm_norm, interpolation='nearest', cmap=cmap)
+            # cbar = ax.colorbar()
+            cbar = fig.colorbar(im, ax=ax)
+            cbar.set_label('Percentage', rotation=90)
+            tick_marks = np.arange(len(metric[1]))
+            plt.sca(ax)
+            plt.title(metric_names[ii])
+            plt.xticks(tick_marks, metric[1], rotation=45)
+            plt.yticks(tick_marks, metric[1])
+
+            fmt = 'd'
+            thresh = cm_norm.max() / 2.
+            for i, j in itertools.product(range(metric[0].shape[0]),
+                                          range(metric[0].shape[1])):
+                ax.text(j, i, format(metric[0][i, j], fmt),
+                        horizontalalignment='center',
+                        color="white" if cm_norm[i, j] > thresh else 'black')
+
+            plt.ylabel('True label')
+            plt.xlabel('Predicted label')
+            plt.tight_layout()
 
         if ax is not None:
-            if x_label is not None and \
-                    not isinstance(x_label, (list, tuple)):
+            if x_label is not None and not isinstance(x_label, (list, tuple)):
                 ax.set_xlabel(x_label, color='k')
             elif isinstance(x_label, (list, tuple)):
                 ax.set_xlabel(x_label[ii], color='k')
