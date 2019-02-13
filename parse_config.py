@@ -146,6 +146,11 @@ def parse_args():
 
 def read_config_file(path):
     config = configparser.ConfigParser()
+
+    if not os.path.isfile(path):
+        print('Configuration file does not exist!')
+        exit()
+
     config.read(path)
 
     class Arguments(object):
