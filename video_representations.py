@@ -28,7 +28,11 @@ from models_residual import def_r3d
 from models_cnn_lstm import def_cnnlstm_small_video_classifier
 
 from bouncingMNIST import BouncingMNISTDataGenerator
-from utils import plot_metrics, plot_metrics_individually, get_labels, SVMEval
+from kth import KTHDataGenerator
+from ucf101 import UCF101DataGenerator
+
+from utils import plot_metrics, plot_metrics_individually, \
+                  get_labels, SVMEval, check_folder
 
 tl = tf.layers
 
@@ -41,7 +45,7 @@ tf.set_random_seed(42)
 class VideoRep():
 
     def __init__(self, sess,
-                 model_id, model_name, model_type,
+                 model_id, model_name, model_type, ex_mode,
                  dataset_name, class_velocity, hide_digits,
                  tr_size, val_size,
                  use_batch_norm, use_layer_norm, use_l2_reg, pretrained_cnn,
@@ -55,6 +59,7 @@ class VideoRep():
         self.model_id = model_id
         self.model_name = model_name
         self.model_type = model_type
+        self.ex_mode = ex_mode
 
         self.is_ae = (self.model_type.find('ae') != -1)
         self.is_cnn_lstm = (self.model_type.find('cnn_lstm') != -1)
@@ -68,8 +73,16 @@ class VideoRep():
         self.hide_digits = hide_digits
         self.tr_size = tr_size
         self.val_size = val_size
-        self.n_classes = 10                 # number of possible classes
-        self.n_labels = 2                   # number of labels for each sample
+
+        if self.dataset_name in ['bouncingMNIST']:
+            self.n_classes = 10              # number of possible classes
+            self.n_labels = 2                # number of labels for each sample
+        elif self.dataset_name in ['KTH']:
+            self.n_classes = 6               # number of possible classes
+            self.n_labels = 1                # number of labels for each sample
+        elif self.dataset_name in ['UCF101']:
+            self.n_classes = 101             # number of possible classes
+            self.n_labels = 1                # number of labels for each sample
 
         self.training_cnn = False
 
@@ -119,6 +132,7 @@ class VideoRep():
                     batch_size=self.batch_size,
                     ae=self.is_ae,
                     noise=self.is_ae,
+                    step_length=0.03,
                     class_velocity=self.class_velocity,
                     hide_digits=self.hide_digits)
             self.validation_generator = \
@@ -126,9 +140,127 @@ class VideoRep():
                     dataset_size=self.val_size,
                     batch_size=self.batch_size,
                     ae=self.is_ae,
+                    step_length=0.03,
                     split='test',
                     class_velocity=self.class_velocity,
                     hide_digits=self.hide_digits)
+
+            if self.ex_mode == 'eval_all':
+                self.tr_digits_only = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.tr_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        step_length=0.03,
+                        class_velocity=False,
+                        hide_digits=False)
+                self.val_digits_only = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.val_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        step_length=0.03,
+                        split='test',
+                        class_velocity=False,
+                        hide_digits=False)
+                self.tr_velocity_only_slow = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.tr_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        step_length=0.03,
+                        class_velocity=True,
+                        hide_digits=True)
+                self.val_velocity_only_slow = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.val_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        step_length=0.03,
+                        split='test',
+                        class_velocity=True,
+                        hide_digits=True)
+                self.tr_velocity_only = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.tr_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        class_velocity=True,
+                        hide_digits=True)
+                self.val_velocity_only = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.val_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        split='test',
+                        class_velocity=True,
+                        hide_digits=True)
+                self.tr_digits_velocity_slow = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.tr_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        step_length=0.03,
+                        class_velocity=True,
+                        hide_digits=False)
+                self.val_digits_velocity_slow = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.val_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        step_length=0.03,
+                        split='test',
+                        class_velocity=True,
+                        hide_digits=False)
+                self.tr_digits_velocity = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.tr_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        class_velocity=True,
+                        hide_digits=False)
+                self.val_digits_velocity = \
+                    BouncingMNISTDataGenerator(
+                        dataset_size=self.val_size,
+                        batch_size=self.batch_size,
+                        ae=self.is_ae,
+                        split='test',
+                        class_velocity=True,
+                        hide_digits=False)
+        elif self.dataset_name == 'KTH':
+            self.training_generator = \
+                KTHDataGenerator(
+                    seq_length=16, batch_size=32,
+                    image_size=64, shuffle=True,
+                    frame_skip=1, to_gray=True,
+                    split='train_validation', random_seed=42,
+                    ae=self.is_ae, noise=False,
+                    kth_path='/store/gbpcosta/KTH')
+            self.validation_generator = \
+                KTHDataGenerator(
+                    seq_length=16, batch_size=32,
+                    image_size=64, shuffle=True,
+                    frame_skip=1, to_gray=True,
+                    split='test', random_seed=42,
+                    ae=self.is_ae, noise=False,
+                    kth_path='/store/gbpcosta/KTH')
+        elif self.dataset_name == 'UCF101':
+            self.training_generator = \
+                UCF101DataGenerator(
+                    seq_length=16, batch_size=32,
+                    image_size=64, shuffle=True,
+                    frame_skip=1, to_gray=True,
+                    split='train', random_seed=42,
+                    ae=self.is_ae, noise=False,
+                    ucf101_path='/store/gbpcosta/UCF101')
+            self.validation_generator = \
+                UCF101DataGenerator(
+                    seq_length=16, batch_size=32,
+                    image_size=64, shuffle=True,
+                    frame_skip=1, to_gray=True,
+                    split='test', random_seed=42,
+                    ae=self.is_ae, noise=False,
+                    ucf101_path='/store/gbpcosta/UCF101')
 
         self.num_batches = \
             self.training_generator.dataset_size_ // \
@@ -188,6 +320,7 @@ class VideoRep():
                             'val_cnn_acc').values
                 else:
                     # Load training losses from previous checkpoint
+                    trained_cnn = False
                     try:
                         self.plt_loss = pd.read_hdf(
                             os.path.join(self.model_dir, 'plt_loss_bkup.h5'),
@@ -401,8 +534,11 @@ class VideoRep():
         else:
             self.labels = tf.placeholder(tf.float32, [None, self.n_classes])
 
-        self.get_onehot_labels = \
-            tf.squeeze(tf.nn.top_k(self.labels).indices)
+        if self.is_multilabel:
+            self.get_onehot_labels = \
+                tf.squeeze(tf.nn.top_k(self.labels).indices)
+        else:
+            self.get_onehot_labels = self.labels
 
         if self.is_cnn_lstm:
             if self.pretrained_cnn:
@@ -422,7 +558,7 @@ class VideoRep():
                 frame_labels = tf.expand_dims(self.labels, axis=1)
                 frame_labels = \
                     tf.tile(frame_labels,
-                            [1, self.video.get_shape().as_list()[1], 1, 1])
+                            [1, self.video.get_shape().as_list()[1], 1])
                 self.frame_labels = tf.reshape(frame_labels,
                                                [-1, self.n_classes])
                 # self.frame_labels = tf.cast(frame_labels, tf.float32)
@@ -591,12 +727,21 @@ class VideoRep():
                         is_decomposed=True, verbosity=self.verbosity,
                         reuse=False, video_emb_layer_name='res7')
 
-        self.get_onehot_pred = \
-            tf.squeeze(tf.nn.top_k(self.net_out).indices)
+        if self.is_multilabel:
+            self.get_onehot_pred = \
+                tf.squeeze(tf.nn.top_k(self.net_out).indices)
+        else:
+            self.get_onehot_pred = \
+                tf.one_hot(tf.argmax(self.net_out, axis=1), self.n_classes)
 
         if self.model_type.find('cnn_lstm') != -1:
-            self.get_onehot_cnn_pred = \
-                tf.squeeze(tf.nn.top_k(self.cnn_net_out).indices)
+            if self.is_multilabel:
+                self.get_onehot_cnn_pred = \
+                    tf.squeeze(tf.nn.top_k(self.cnn_net_out).indices)
+            else:
+                self.get_onehot_cnn_pred = \
+                    tf.one_hot(tf.argmax(self.cnn_net_out, axis=1),
+                               self.n_classes)
 
         if self.use_batch_norm:
             if self.model_type == 'c3d_ae_small':
@@ -747,12 +892,22 @@ class VideoRep():
                             is_decomposed=True, verbosity=self.verbosity,
                             reuse=True, video_emb_layer_name='res7')
 
-            self.get_onehot_test_pred = \
-                tf.squeeze(tf.nn.top_k(self.test_net_out).indices)
+            if self.is_multilabel:
+                self.get_onehot_test_pred = \
+                    tf.squeeze(tf.nn.top_k(self.test_net_out).indices)
+            else:
+                self.get_onehot_test_pred = \
+                    tf.one_hot(tf.argmax(self.test_net_out, axis=1),
+                               self.n_classes)
 
             if self.model_type.find('cnn_lstm') != -1:
-                self.get_onehot_test_cnn_pred = \
-                    tf.squeeze(tf.nn.top_k(self.test_cnn_net_out).indices)
+                if self.is_multilabel:
+                    self.get_onehot_test_cnn_pred = \
+                        tf.squeeze(tf.nn.top_k(self.test_cnn_net_out).indices)
+                else:
+                    self.get_onehot_test_cnn_pred = \
+                        tf.one_hot(tf.argmax(self.test_cnn_net_out, axis=1),
+                                   self.n_classes)
 
         self._def_loss_fn()
         self._def_optimizer()
@@ -765,12 +920,6 @@ class VideoRep():
         starting_epoch = self.current_epoch
 
         self.training_cnn = True
-
-        plt_idx = \
-            np.random.choice(
-                range(self.validation_generator.dataset_size_
-                      * self.video.shape[1]),
-                size=self.validation_generator.dataset_size_)
 
         for epoch in tqdm(range(starting_epoch, self.epoch+1), position=1):
 
@@ -997,107 +1146,111 @@ class VideoRep():
                         # auc_plt_names.append('Validation ROC AUC (SVM) - '
                         #                      'Class {}'.format(cl))
 
+
+                plt_idx = \
+                    np.random.choice(
+                        range(len(val_video_emb)),
+                        size=self.validation_generator.dataset_size_)
                 plt_val_video_emb = val_video_emb[plt_idx]
 
-                val_labels_num = get_labels(val_labels, n_labels=self.n_labels)
-                val_labels_num = np.expand_dims(val_labels_num, axis=1)
+                val_labels_n = get_labels(val_labels, n_labels=self.n_labels)
+                val_labels_n = np.expand_dims(val_labels_n, axis=1)
 
-                val_labels_num = \
-                    np.tile(val_labels_num,
+                val_labels_n = \
+                    np.tile(val_labels_n,
                             [1, video_batch.shape[1], 1])
-                val_labels_num = val_labels_num.reshape([-1, self.n_labels])
-                label1 = val_labels_num[plt_idx, 0].reshape((-1, 1))
-                label2 = val_labels_num[plt_idx, 1].reshape((-1, 1))
+                val_labels_n = val_labels_n.reshape([-1, self.n_labels])
 
-                # PCA
-                pca = PCA(n_components=2, whiten=True)
-                pca_video_proj = pca.fit_transform(plt_val_video_emb)
-                pca_video_proj1 = np.concatenate([pca_video_proj, label1],
-                                                 axis=1)
-                pca_video_proj2 = np.concatenate([pca_video_proj, label2],
-                                                 axis=1)
-                # LDA
-                lda = LinearDiscriminantAnalysis(n_components=2)
-                lda_video_proj1 = lda.fit_transform(plt_val_video_emb,
-                                                    label1.squeeze())
-                lda_video_proj1 = np.concatenate([lda_video_proj1, label1],
-                                                 axis=1)
+                pca_projs = []
+                lda_projs = []
+                tsne_projs = []
+                for ii in range(self.n_labels):
+                    label = val_labels_n[plt_idx, ii].reshape((-1, 1))
 
-                lda_video_proj2 = lda.fit_transform(plt_val_video_emb,
-                                                    label2.squeeze())
-                lda_video_proj2 = np.concatenate([lda_video_proj2, label2],
-                                                 axis=1)
-                # t-SNE
-                tsne = TSNE(n_components=2)
-                tsne_video_proj = tsne.fit_transform(plt_val_video_emb)
-                tsne_video_proj1 = np.concatenate([tsne_video_proj, label1],
-                                                  axis=1)
-                tsne_video_proj2 = np.concatenate([tsne_video_proj, label2],
-                                                  axis=1)
+                    # PCA
+                    pca = PCA(n_components=2, whiten=True)
+                    pca_video_proj = pca.fit_transform(plt_val_video_emb)
+                    pca_video_proj = np.concatenate([pca_video_proj, label],
+                                                    axis=1)
+                    pca_projs.append(pca_video_proj)
+
+                    # LDA
+                    lda = LinearDiscriminantAnalysis(n_components=2)
+                    lda_video_proj = lda.fit_transform(plt_val_video_emb,
+                                                       label.squeeze())
+                    lda_video_proj = np.concatenate([lda_video_proj, label],
+                                                    axis=1)
+                    lda_projs.append(lda_video_proj)
+
+                    # t-SNE
+                    tsne = TSNE(n_components=2)
+                    tsne_video_proj = tsne.fit_transform(plt_val_video_emb)
+                    tsne_video_proj = \
+                        tsne_video_proj[:self.validation_generator.dataset_size_]
+                    tsne_video_proj = np.concatenate([tsne_video_proj, label],
+                                                     axis=1)
+                    tsne_projs.append(tsne_video_proj)
 
                 if self.is_ae:
-                    metrics_list = [self.plt_loss,
-                                    pca_video_proj1,
-                                    pca_video_proj2,
-                                    lda_video_proj1,
-                                    lda_video_proj2,
-                                    tsne_video_proj1,
-                                    tsne_video_proj2,
-                                    video_batch[0].squeeze(),
-                                    net_out[0].squeeze(),
-                                    video_batch[1].squeeze(),
-                                    net_out[1].squeeze()]
+                    metrics_list = [self.plt_loss] \
+                                   + pca_projs \
+                                   + lda_projs \
+                                   + tsne_projs \
+                                   + [video_batch[0].squeeze(),
+                                      net_out[0].squeeze(),
+                                      video_batch[1].squeeze(),
+                                      net_out[1].squeeze()]
                     iterations_list = [list(range(1, (self.current_epoch
-                                                      * self.num_batches)+1)),
-                                       None, None, None, None,
-                                       None, None, None,
-                                       None, None, None]
-                    plt_types = ['lines',
-                                 'scatter', 'scatter',
-                                 'scatter', 'scatter', 'scatter',
-                                 'scatter', 'image-grid', 'image-grid',
-                                 'image-grid', 'image-grid']
-                    metric_names = ['Loss',
-                                    'PCA Video Projection 1',
-                                    'PCA Video Projection 2',
-                                    'LDA Video Projection 1',
-                                    'LDA Video Projection 2',
-                                    't-SNE Video Projection 1',
-                                    't-SNE Video Projection 2',
-                                    'Video 1',
-                                    'Video Reconstruction AE 1',
-                                    'Video 2',
-                                    'Video Reconstruction AE 2']
+                                                      * self.num_batches)+1))]\
+                        + self.n_labels * [None] \
+                        + self.n_labels * [None] \
+                        + self.n_labels * [None] \
+                        + [None, None, None, None]
+                    plt_types = ['lines'] \
+                        + self.n_labels * ['scatter'] \
+                        + self.n_labels * ['scatter'] \
+                        + self.n_labels * ['scatter'] \
+                        + ['image-grid', 'image-grid',
+                           'image-grid', 'image-grid']
+                    metric_names = ['Loss'] \
+                        + ['PCA Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['LDA Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['t-SNE Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['Video 1',
+                           'Video Reconstruction AE 1',
+                           'Video 2',
+                           'Video Reconstruction AE 2']
 
                 else:
                     metrics_list = [self.plt_loss,
                                     self.tr_net_acc,
-                                    self.val_net_acc,
-                                    pca_video_proj1,
-                                    pca_video_proj2,
-                                    lda_video_proj1,
-                                    lda_video_proj2,
-                                    tsne_video_proj1,
-                                    tsne_video_proj2]
+                                    self.val_net_acc] \
+                                   + pca_projs \
+                                   + lda_projs \
+                                   + tsne_projs
                     iterations_list = [list(range(1, (self.current_epoch
                                                       * self.num_batches)+1)),
                                        list(range(1, self.current_epoch+1)),
-                                       list(range(1, self.current_epoch+1)),
-                                       None, None, None, None,
-                                       None, None]
-                    plt_types = ['lines', 'lines', 'lines',
-                                 'scatter', 'scatter',
-                                 'scatter', 'scatter', 'scatter',
-                                 'scatter']
+                                       list(range(1, self.current_epoch+1))] \
+                        + self.n_labels * [None] \
+                        + self.n_labels * [None] \
+                        + self.n_labels * [None]
+                    plt_types = ['lines', 'lines', 'lines'] \
+                        + self.n_labels * ['scatter'] \
+                        + self.n_labels * ['scatter'] \
+                        + self.n_labels * ['scatter']
                     metric_names = ['Loss',
                                     'Training Network Accuracy',
-                                    'Validation Network Accuracy',
-                                    'PCA Video Projection 1',
-                                    'PCA Video Projection 2',
-                                    'LDA Video Projection 1',
-                                    'LDA Video Projection 2',
-                                    't-SNE Video Projection 1',
-                                    't-SNE Video Projection 2']
+                                    'Validation Network Accuracy'] \
+                        + ['PCA Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['LDA Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['t-SNE Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)]
 
                 plot_metrics(
                     metrics_list=metrics_list,
@@ -1595,101 +1748,96 @@ class VideoRep():
                         #                      'Class {}'.format(cl))
 
                 val_labels_n = get_labels(val_labels, n_labels=self.n_labels)
-                label1 = val_labels_n[:, 0].reshape((-1, 1))
-                label2 = val_labels_n[:, 1].reshape((-1, 1))
+                pca_projs = []
+                lda_projs = []
+                tsne_projs = []
+                for ii in range(self.n_labels):
+                    label = val_labels_n[:, ii].reshape((-1, 1))
 
-                # PCA
-                pca = PCA(n_components=2, whiten=True)
-                pca_video_proj = pca.fit_transform(val_video_emb)
-                pca_video_proj1 = np.concatenate([pca_video_proj, label1],
-                                                 axis=1)
-                pca_video_proj2 = np.concatenate([pca_video_proj, label2],
-                                                 axis=1)
-                # LDA
-                lda = LinearDiscriminantAnalysis(n_components=2)
-                lda_video_proj1 = lda.fit_transform(val_video_emb,
-                                                    label1.squeeze())
-                lda_video_proj1 = np.concatenate([lda_video_proj1, label1],
-                                                 axis=1)
+                    # PCA
+                    pca = PCA(n_components=2, whiten=True)
+                    pca_video_proj = pca.fit_transform(val_video_emb)
+                    pca_video_proj = np.concatenate([pca_video_proj, label],
+                                                    axis=1)
+                    pca_projs.append(pca_video_proj)
 
-                lda_video_proj2 = lda.fit_transform(val_video_emb,
-                                                    label2.squeeze())
-                lda_video_proj2 = np.concatenate([lda_video_proj2, label2],
-                                                 axis=1)
-                # t-SNE
-                tsne = TSNE(n_components=2)
-                tsne_video_proj = tsne.fit_transform(val_video_emb)
-                tsne_video_proj = \
-                    tsne_video_proj[:self.validation_generator.dataset_size_]
+                    # LDA
+                    lda = LinearDiscriminantAnalysis(n_components=2)
+                    lda_video_proj = lda.fit_transform(val_video_emb,
+                                                       label.squeeze())
+                    lda_video_proj = np.concatenate([lda_video_proj, label],
+                                                    axis=1)
+                    lda_projs.append(lda_video_proj)
 
-                tsne_video_proj1 = np.concatenate([tsne_video_proj, label1],
-                                                  axis=1)
-                tsne_video_proj2 = np.concatenate([tsne_video_proj, label2],
-                                                  axis=1)
+                    # t-SNE
+                    tsne = TSNE(n_components=2)
+                    tsne_video_proj = tsne.fit_transform(val_video_emb)
+                    tsne_video_proj = \
+                        tsne_video_proj[:self.validation_generator.dataset_size_]
+                    tsne_video_proj = np.concatenate([tsne_video_proj, label],
+                                                     axis=1)
+                    tsne_projs.append(tsne_video_proj)
 
                 if self.is_ae:
-                    metrics_list = [self.plt_loss,
-                                    pca_video_proj1,
-                                    pca_video_proj2,
-                                    lda_video_proj1,
-                                    lda_video_proj2,
-                                    tsne_video_proj1,
-                                    tsne_video_proj2,
-                                    video_batch[0].squeeze(),
-                                    net_out[0].squeeze(),
-                                    video_batch[1].squeeze(),
-                                    net_out[1].squeeze()]
+                    metrics_list = [self.plt_loss] \
+                                   + pca_projs \
+                                   + lda_projs \
+                                   + tsne_projs \
+                                   + [video_batch[0].squeeze(),
+                                      net_out[0].squeeze(),
+                                      video_batch[1].squeeze(),
+                                      net_out[1].squeeze()]
                     iterations_list = [list(range(1, (self.current_epoch
-                                                      * self.num_batches)+1)),
-                                       None, None, None, None,
-                                       None, None, None,
-                                       None, None, None]
-                    plt_types = ['lines',
-                                 'scatter', 'scatter',
-                                 'scatter', 'scatter', 'scatter',
-                                 'scatter', 'image-grid', 'image-grid',
-                                 'image-grid', 'image-grid']
-                    metric_names = ['Loss',
-                                    'PCA Video Projection 1',
-                                    'PCA Video Projection 2',
-                                    'LDA Video Projection 1',
-                                    'LDA Video Projection 2',
-                                    't-SNE Video Projection 1',
-                                    't-SNE Video Projection 2',
-                                    'Video 1',
-                                    'Video Reconstruction AE 1',
-                                    'Video 2',
-                                    'Video Reconstruction AE 2']
+                                                      * self.num_batches)+1))] \
+                                      + self.n_labels * [None] \
+                                      + self.n_labels * [None] \
+                                      + self.n_labels * [None] \
+                                      + [None, None, None, None]
+                    plt_types = ['lines'] \
+                                + self.n_labels * ['scatter'] \
+                                + self.n_labels * ['scatter'] \
+                                + self.n_labels * ['scatter'] \
+                                + ['image-grid', 'image-grid',
+                                   'image-grid', 'image-grid']
+                    metric_names = ['Loss'] \
+                                   + ['PCA Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['LDA Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['t-SNE Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['Video 1',
+                                      'Video Reconstruction AE 1',
+                                      'Video 2',
+                                      'Video Reconstruction AE 2']
 
                 else:
                     metrics_list = [self.plt_loss,
                                     self.tr_net_acc,
-                                    self.val_net_acc,
-                                    pca_video_proj1,
-                                    pca_video_proj2,
-                                    lda_video_proj1,
-                                    lda_video_proj2,
-                                    tsne_video_proj1,
-                                    tsne_video_proj2]
+                                    self.val_net_acc] \
+                                   + pca_projs \
+                                   + lda_projs \
+                                   + tsne_projs
                     iterations_list = [list(range(1, (self.current_epoch
                                                       * self.num_batches)+1)),
                                        list(range(1, self.current_epoch+1)),
-                                       list(range(1, self.current_epoch+1)),
-                                       None, None, None, None,
-                                       None, None]
-                    plt_types = ['lines', 'lines', 'lines',
-                                 'scatter', 'scatter',
-                                 'scatter', 'scatter', 'scatter',
-                                 'scatter']
+                                       list(range(1, self.current_epoch+1))] \
+                        + self.n_labels * [None] \
+                        + self.n_labels * [None] \
+                        + self.n_labels * [None]
+                    plt_types = ['lines', 'lines', 'lines'] \
+                        + self.n_labels * ['scatter'] \
+                        + self.n_labels * ['scatter'] \
+                        + self.n_labels * ['scatter']
                     metric_names = ['Loss',
                                     'Training Network Accuracy',
-                                    'Validation Network Accuracy',
-                                    'PCA Video Projection 1',
-                                    'PCA Video Projection 2',
-                                    'LDA Video Projection 1',
-                                    'LDA Video Projection 2',
-                                    't-SNE Video Projection 1',
-                                    't-SNE Video Projection 2']
+                                    'Validation Network Accuracy'] \
+                        + ['PCA Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['LDA Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)] \
+                        + ['t-SNE Video Projection {}'.format(ii)
+                           for ii in range(self.n_labels)]
 
                 plot_metrics(
                     metrics_list=metrics_list,
@@ -1962,6 +2110,327 @@ class VideoRep():
                                      'extracted_features.h5'),
                         'validation_data')
 
+    def eval_all(self):
+        if self.current_epoch == 1:
+            print('Model needs to be trained before evaluation is '
+                  'performed.')
+        elif self.dataset_name != 'bouncingMNIST':
+            print('Evaluation is implemented only for BouncingMNIST dataset.')
+        else:
+            check_folder(os.path.join(self.plt_dir, 'crossds_eval'))
+
+            current_set = ['digits only',
+                           'velocity only (slow)', 'velocity only',
+                           'digits and velocity (slow)', 'digits and velocity']
+            for jj, (tr_generator, val_generator) in \
+                    enumerate([(self.tr_digits_only, self.val_digits_only),
+                     (self.tr_velocity_only_slow, self.val_velocity_only_slow),
+                     (self.tr_velocity_only, self.val_velocity_only),
+                     (self.tr_digits_velocity_slow,
+                      self.val_digits_velocity_slow),
+                     (self.tr_digits_velocity, self.val_digits_velocity)]):
+                num_batches = tr_generator.dataset_size_ // \
+                    tr_generator.batch_size_
+
+                tr_video_emb = np.array([], dtype=np.float32) \
+                    .reshape(0, self.emb_dim)
+                tr_labels = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+                tr_pred = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+
+                for batch_number in tqdm(range(num_batches), position=0):
+                    video_batch, labels = tr_generator.get_batch()
+
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                    if self.is_ae:
+                        if self.use_batch_norm:
+                            loss, video_emb, labels = \
+                                self.sess.run(
+                                    [self.test_loss,
+                                     self.test_video_emb,
+                                     self.get_onehot_labels],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+                        else:
+                            loss, video_emb, labels = \
+                                self.sess.run(
+                                    [self.loss,
+                                     self.video_emb,
+                                     self.get_onehot_labels],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+                    else:
+                        if self.use_batch_norm:
+                            loss, video_emb, labels, pred = \
+                                self.sess.run(
+                                    [self.test_loss,
+                                     self.test_video_emb,
+                                     self.get_onehot_labels,
+                                     self.get_onehot_test_pred],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+                        else:
+                            loss, video_emb, labels, pred = \
+                                self.sess.run(
+                                    [self.loss,
+                                     self.video_emb,
+                                     self.get_onehot_labels,
+                                     self.get_onehot_pred],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+
+                    tr_video_emb = np.vstack([tr_video_emb, video_emb])
+                    tr_labels = np.vstack([tr_labels, labels])
+
+                    if self.is_ae is False:
+                        tr_pred = np.vstack([tr_pred, pred])
+
+                if self.is_ae is False:
+                    tr_net_acc = accuracy_score(tr_labels, tr_pred)
+
+                # Validation set
+
+                num_batches = val_generator.dataset_size_ // \
+                    val_generator.batch_size_
+
+                val_video_emb = np.array([], dtype=np.float32) \
+                    .reshape(0, self.emb_dim)
+                val_labels = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+                val_pred = np.array([], dtype=np.float32) \
+                    .reshape(0, self.n_classes)
+
+                for batch_number in tqdm(range(num_batches), position=0):
+                    video_batch, labels = val_generator.get_batch()
+
+                    inverted_labels = 1 - labels
+                    labels = labels
+                    inverted_labels = inverted_labels
+
+                    labels = np.stack([inverted_labels, labels], axis=2)
+
+                    if self.is_ae:
+                        if self.use_batch_norm:
+                            loss, video_emb, labels = \
+                                self.sess.run(
+                                    [self.test_loss,
+                                     self.test_video_emb,
+                                     self.get_onehot_labels],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+                        else:
+                            loss, video_emb, labels = \
+                                self.sess.run(
+                                    [self.loss,
+                                     self.video_emb,
+                                     self.get_onehot_labels],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+                    else:
+                        if self.use_batch_norm:
+                            loss, video_emb, labels, pred = \
+                                self.sess.run(
+                                    [self.test_loss,
+                                     self.test_video_emb,
+                                     self.get_onehot_labels,
+                                     self.get_onehot_test_pred],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+                        else:
+                            loss, video_emb, labels, pred = \
+                                self.sess.run(
+                                    [self.loss,
+                                     self.video_emb,
+                                     self.get_onehot_labels,
+                                     self.get_onehot_pred],
+                                    feed_dict={self.video: video_batch,
+                                               self.labels: labels})
+
+                    val_video_emb = np.vstack([val_video_emb, video_emb])
+                    val_labels = np.vstack([val_labels, labels])
+
+                    if self.is_ae is False:
+                        val_pred = np.vstack([val_pred, pred])
+
+                if self.is_ae is False:
+                    val_net_acc = accuracy_score(val_labels, val_pred)
+
+                if self.svm_analysis:
+                    # val_auc,
+                    val_acc, valid_classes = \
+                        self.svm.compute(train_data=(tr_video_emb, tr_labels),
+                                         val_data=(val_video_emb, val_labels))
+
+                val_labels_n = get_labels(val_labels, n_labels=self.n_labels)
+                pca_projs = []
+                lda_projs = []
+                tsne_projs = []
+                for ii in range(self.n_labels):
+                    label = val_labels_n[:, ii].reshape((-1, 1))
+
+                    # PCA
+                    pca = PCA(n_components=2, whiten=True)
+                    pca_video_proj = pca.fit_transform(val_video_emb)
+                    pca_video_proj = np.concatenate([pca_video_proj, label],
+                                                    axis=1)
+                    pca_projs.append(pca_video_proj)
+
+                    # LDA
+                    lda = LinearDiscriminantAnalysis(n_components=2)
+                    lda_video_proj = lda.fit_transform(val_video_emb,
+                                                       label.squeeze())
+                    lda_video_proj = np.concatenate([lda_video_proj, label],
+                                                    axis=1)
+                    lda_projs.append(lda_video_proj)
+
+                    # t-SNE
+                    tsne = TSNE(n_components=2)
+                    tsne_video_proj = tsne.fit_transform(val_video_emb)
+                    tsne_video_proj = \
+                        tsne_video_proj[
+                            :self.validation_generator.dataset_size_]
+                    tsne_video_proj = np.concatenate([tsne_video_proj, label],
+                                                     axis=1)
+                    tsne_projs.append(tsne_video_proj)
+
+                if self.is_ae:
+                    metrics_list = pca_projs \
+                                   + lda_projs \
+                                   + tsne_projs \
+                                   + [video_batch[0].squeeze(),
+                                      net_out[0].squeeze(),
+                                      video_batch[1].squeeze(),
+                                      net_out[1].squeeze()]
+                    iterations_list = self.n_labels * [None] \
+                                      + self.n_labels * [None] \
+                                      + self.n_labels * [None] \
+                                      + [None, None, None, None]
+                    plt_types = self.n_labels * ['scatter'] \
+                                + self.n_labels * ['scatter'] \
+                                + self.n_labels * ['scatter'] \
+                                + ['image-grid', 'image-grid',
+                                   'image-grid', 'image-grid']
+                    metric_names = ['PCA Video Projection {}'.format(ii)
+                                    for ii in range(self.n_labels)] \
+                                   + ['LDA Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['t-SNE Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['Video 1',
+                                      'Video Reconstruction AE 1',
+                                      'Video 2',
+                                      'Video Reconstruction AE 2']
+
+                else:
+                    metrics_list = [[tr_net_acc,
+                                    val_net_acc]] \
+                                   + pca_projs \
+                                   + lda_projs \
+                                   + tsne_projs
+                    iterations_list = [['Training Accuracy',
+                                       'Validation Accuracy']] \
+                                      + self.n_labels * [None] \
+                                      + self.n_labels * [None] \
+                                      + self.n_labels * [None]
+                    plt_types = ['lines'] \
+                                + self.n_labels * ['scatter'] \
+                                + self.n_labels * ['scatter'] \
+                                + self.n_labels * ['scatter']
+                    metric_names = ['Network Accuracy'] \
+                                   + ['PCA Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['LDA Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)] \
+                                   + ['t-SNE Video Projection {}'.format(ii)
+                                      for ii in range(self.n_labels)]
+
+                plot_metrics(
+                    metrics_list=metrics_list,
+                    iterations_list=iterations_list,
+                    types=plt_types,
+                    metric_names=metric_names,
+                    legend=True,
+                    savefile=os.path.join(self.plt_dir, 'crossds_eval',
+                                          'crossds_{}_metrics.png'
+                                          .format(
+                                            current_set[jj].replace(' ',
+                                                                    '-'))),
+                    bot=self.bot)
+
+                if self.plot_individually:
+                    plot_metrics_individually(
+                        metrics_list=metrics_list,
+                        iterations_list=iterations_list,
+                        types=plt_types,
+                        metric_names=metric_names,
+                        legend=True,
+                        savefile=
+                            os.path.join(self.plt_dir, 'crossds_eval',
+                                        'crossds_{}_metrics.png'
+                                         .format(
+                                            current_set[jj].replace(' ',
+                                                                    '-'))),
+                        bot=None)
+
+                if self.svm_analysis:
+                    plot_metrics(
+                        metrics_list=[val_acc],
+                        iterations_list=[list(range(1, self.n_classes+1))],
+                        types=['lines'],
+                        metric_names=['Per Class Validation Accuracy'
+                                      ' (SVM)'],
+                        legend=True,
+                        savefile=
+                            os.path.join(self.plt_dir, 'crossds_eval',
+                                         'crossds_{}_acc.png'
+                                          .format(
+                                            current_set[jj].replace(' ',
+                                                                    '-'))),
+                        bot=self.bot)
+
+                confusion_matrices = []
+                confusion_matrices_names = []
+                for ii in range(self.n_classes):
+                    confusion_matrices.append(
+                        [confusion_matrix(val_labels[:, ii], val_pred[:, ii]),
+                         [-1, ii]])
+                    confusion_matrices_names.append(
+                        'Confusion Matrix - Class {}'.format(ii))
+
+                plot_metrics(
+                    metrics_list=confusion_matrices,
+                    iterations_list=[None] * self.n_classes,
+                    types=['confusion-matrix'] * self.n_classes,
+                    metric_names=confusion_matrices_names,
+                    legend=True,
+                    savefile=os.path.join(self.plt_dir,  'crossds_eval',
+                                          'crossds_{}_cm.png'
+                                          .format(
+                                            current_set[jj].replace(' ',
+                                                                    '-'))),
+                    bot=self.bot)
+
+                if self.plot_individually:
+                    plot_metrics_individually(
+                        metrics_list=confusion_matrices,
+                        iterations_list=[None] * self.n_classes,
+                        types=['confusion-matrix'] * self.n_classes,
+                        metric_names=confusion_matrices_names,
+                        legend=True,
+                        savefile=
+                            os.path.join(self.plt_dir, 'crossds_eval',
+                                         'crossds_{}_cm.png'
+                                         .format(
+                                            current_set[jj].replace(' ',
+                                                                    '-'))),
+                        bot=None)
+
 
 if __name__ == "__main__":
     # parse arguments
@@ -1981,6 +2450,7 @@ if __name__ == "__main__":
                      model_id=args.model_id,
                      model_name=args.model_name,
                      model_type=args.model_type,
+                     ex_mode=args.ex_mode,
                      dataset_name=args.dataset_name,
                      class_velocity=args.class_velocity,
                      hide_digits=args.hide_digits,
@@ -2008,5 +2478,7 @@ if __name__ == "__main__":
         model.train_model()
     elif args.ex_mode == 'feat_extraction':
         model.extract_features()
+    elif args.ex_mode == 'eval_all':
+        model.eval_all()
     else:
         raise NotImplementedError

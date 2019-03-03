@@ -181,6 +181,15 @@ def def_cnnlstm_small_video_classifier(inputs,
                                               name='cnn_softmax_logits')
                 cnn_softmax_logits = tf.reshape(cnn_softmax_logits,
                                                 (-1, n_classes, 2))
+
+                if is_training is False:
+                    cnn_softmax_logits = \
+                        tf.strided_slice(
+                            cnn_softmax_logits,
+                            [0, 0, 0],
+                            tf.shape(cnn_softmax_logits),
+                            [16, 1, 1],
+                            name='cnn_softmax_logits_last')
             else:
                 cnn_softmax_logits = tl.dense(inputs=cnn_feats,
                                               units=n_classes,
@@ -188,12 +197,14 @@ def def_cnnlstm_small_video_classifier(inputs,
                                               kernel_regularizer=regularizer,
                                               name='cnn_softmax_logits')
 
-            if is_training is False:
-                cnn_softmax_logits = \
-                    tf.strided_slice(
-                        cnn_softmax_logits,
-                        [0, 0, 0], tf.shape(cnn_softmax_logits), [16, 1, 1],
-                        name='cnn_softmax_logits_last')
+                if is_training is False:
+                    cnn_softmax_logits = \
+                        tf.strided_slice(
+                            cnn_softmax_logits,
+                            [0, 0],
+                            tf.shape(cnn_softmax_logits),
+                            [16, 1],
+                            name='cnn_softmax_logits_last')
 
             if cnn_softmax_logits.name.find(video_emb_layer_name) != -1:
                 video_emb = tl.flatten(cnn_softmax_logits)
@@ -275,7 +286,8 @@ def def_cnnlstm_small_video_classifier(inputs,
             last_indice = outputs.get_shape().as_list()[1] - 1
             lstm_feats = \
                 tf.slice(outputs, [0, last_indice, 0], [-1, -1, -1],
-                         name='lstm_out')
+                         name='lstm_feats')
+            lstm_feats = tf.reshape(lstm_feats, (-1, 512), name='lstm_out')
 
         if lstm_feats.name.split('/')[1].find(video_emb_layer_name) != -1:
             video_emb = tl.flatten(lstm_feats)
@@ -290,7 +302,7 @@ def def_cnnlstm_small_video_classifier(inputs,
             softmax_logits = tf.reshape(softmax_logits,
                                         (-1, n_classes, 2))
         else:
-            softmax_logits = tl.dense(inputs=frame_cnn,
+            softmax_logits = tl.dense(inputs=lstm_feats,
                                       units=n_classes,
                                       activation=None,
                                       kernel_regularizer=regularizer,

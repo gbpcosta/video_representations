@@ -32,6 +32,7 @@ def plot_metrics(metrics_list, iterations_list, types, savefile,
         not isinstance(metrics_list, str)
 
     total_n_plots = len(metrics_list)
+
     if total_n_plots == 1:
         grid_cols, grid_rows = 1, 1
     elif total_n_plots == 2:

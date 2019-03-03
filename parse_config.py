@@ -47,14 +47,15 @@ def parse_args():
                           help='Architecture type used for the network',
                           required=True)
     parser_b.add_argument('--ex_mode', type=str, default='training',
-                          choices=['training', 'feat_extraction'],
-                          help='Execution mode: training or feature '
-                               'extraction.',
+                          choices=['training', 'feat_extraction',
+                                   'eval_all'],
+                          help='Execution mode: training, feature '
+                               'extraction or eval_all.',
                           required=True)
 
     # DATASET
     parser_b.add_argument('--dataset_name', type=str, default='bouncingMNIST',
-                          choices=['bouncingMNIST'],
+                          choices=['bouncingMNIST', 'KTH', 'UCF101'],
                           help='Dataset used for training and validation',
                           required=True)
     parser_b.add_argument('--class_velocity', action='store_true',
@@ -194,7 +195,7 @@ def read_config_file(path):
                     else:
                         return self.default[option]
 
-                self.model_id = parse_value_or_get_default(config.getint,
+                self.model_id = parse_value_or_get_default(config.get,
                                                            'MODEL',
                                                            'model_id')
                 self.model_name = parse_value_or_get_default(config.get,
@@ -417,12 +418,12 @@ def check_args(args):
         'r3d_clf_small, r3d_clf_large, ' \
         'r21d_clf_small, r21d_clf_large.'
 
-    assert args.ex_mode in ['training', 'feat_extraction'], \
+    assert args.ex_mode in ['training', 'feat_extraction', 'eval_all'], \
         'invalid ex_mode. ex_mode must be one of the following: ' \
         'training, feat_extraction.' \
 
     # DATASET
-    assert args.dataset_name in ['bouncingMNIST'], \
+    assert args.dataset_name in ['bouncingMNIST', 'KTH', 'UCF101'], \
         'invalid dataset_name. dataset_name must be one of the following: ' \
         'bouncingMNIST.'
     assert args.tr_size > 0, 'tr_size must be greater than 0.'
