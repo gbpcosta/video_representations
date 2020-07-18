@@ -33,25 +33,28 @@ def plot_metrics(metrics_list, iterations_list, types, savefile,
 
     total_n_plots = len(metrics_list)
 
-    if total_n_plots == 1:
-        grid_cols, grid_rows = 1, 1
-    elif total_n_plots == 2:
-        grid_cols, grid_rows = 2, 1
-    elif total_n_plots == 3 or total_n_plots == 4:
-        grid_cols, grid_rows = 2, 2
-    elif total_n_plots == 5 or total_n_plots == 6:
-        grid_cols, grid_rows = 2, 3
-    elif total_n_plots == 7 or total_n_plots == 8 or total_n_plots == 9:
-        grid_cols, grid_rows = 3, 3
-    elif total_n_plots == 10 or total_n_plots == 11 or total_n_plots == 12:
-        grid_cols, grid_rows = 3, 4
-    elif total_n_plots == 13 or total_n_plots == 14 or total_n_plots == 15:
-        grid_cols, grid_rows = 3, 5
-    elif total_n_plots == 16:
-        grid_cols, grid_rows = 4, 4
-    elif total_n_plots == 17 or total_n_plots == 18 or \
-            total_n_plots == 19 or total_n_plots == 20:
-        grid_cols, grid_rows = 4, 5
+    # if total_n_plots == 1:
+    #     grid_cols, grid_rows = 1, 1
+    # elif total_n_plots == 2:
+    #     grid_cols, grid_rows = 2, 1
+    # elif total_n_plots == 3 or total_n_plots == 4:
+    #     grid_cols, grid_rows = 2, 2
+    # elif total_n_plots == 5 or total_n_plots == 6:
+    #     grid_cols, grid_rows = 2, 3
+    # elif total_n_plots == 7 or total_n_plots == 8 or total_n_plots == 9:
+    #     grid_cols, grid_rows = 3, 3
+    # elif total_n_plots == 10 or total_n_plots == 11 or total_n_plots == 12:
+    #     grid_cols, grid_rows = 3, 4
+    # elif total_n_plots == 13 or total_n_plots == 14 or total_n_plots == 15:
+    #     grid_cols, grid_rows = 3, 5
+    # elif total_n_plots == 16:
+    #     grid_cols, grid_rows = 4, 4
+    # elif total_n_plots == 17 or total_n_plots == 18 or \
+    #         total_n_plots == 19 or total_n_plots == 20:
+    #     grid_cols, grid_rows = 4, 5
+
+    grid_cols = int(np.ceil(np.sqrt(total_n_plots)))
+    grid_rows = int(np.ceil(total_n_plots / grid_cols))
 
     fig_w, fig_h = figsize * grid_cols, figsize * grid_rows
 
@@ -315,12 +318,13 @@ def plot_metrics_individually(metrics_list, iterations_list, types, savefile,
 def get_labels(one_hot_labels, n_labels=2):
     labels = [np.nonzero(one_hot_labels[ii, :])[0]
               for ii in range(one_hot_labels.shape[0])]
+
     labels = [np.repeat(labels[ii], n_labels).reshape(1, -1)
               if labels[ii].shape[0] < n_labels
               else labels[ii].reshape(1, -1)
               for ii in range(len(labels))]
 
-    return np.concatenate(labels, axis=0)
+    return np.vstack(labels)
 
 
 class SVMEval():
@@ -328,16 +332,17 @@ class SVMEval():
     Based on:
     https://github.com/leosampaio/keras-generative/blob/master/metrics/svm.py
     """
-    def __init__(self, tr_size, val_size, n_splits=5,
+    def __init__(self, tr_size, val_size, n_splits=5, n_labels=1,
                  scale=False, per_class=True, verbose=0):
         self.tr_size = tr_size
         self.val_size = val_size
         self.n_splits = n_splits
-        # self.param_grid = [{'C': [1, 10, 100, 1000]}]
-        self.param_grid = [{'alpha': [1 * tr_size,
-                                      0.1 * tr_size,
-                                      0.01 * tr_size,
-                                      0.001 * tr_size]}]
+        self.n_labels = n_labels
+        self.param_grid = [{'C': [0.1, 1, 10, 100, 1000]}]
+        # self.param_grid = [{'alpha': [1 * tr_size,
+        #                               0.1 * tr_size,
+        #                               0.01 * tr_size,
+        #                               0.001 * tr_size]}]
         # C_svc * n_samples = 1 / alpha_sgd
         self.scale = scale
         self.per_class = per_class
@@ -345,12 +350,12 @@ class SVMEval():
 
         if self.n_splits > 1:
             self.acc_grid = GridSearchCV(
-                SGDClassifier(),
+                LinearSVC(max_iter=1000, tol=1e-3),
                 param_grid=self.param_grid,
                 cv=self.n_splits, verbose=self.verbose,
-                scoring='accuracy', n_jobs=3)
+                scoring='balanced_accuracy', n_jobs=12)
             # self.auc_grid = GridSearchCV(
-            #     SGDClassifier(),
+            #     SGDClassifier(max_iter=1000, tol=1e-3),
             #     param_grid=self.param_grid,
             #     cv=self.n_splits, verbose=self.verbose,
             #     scoring='roc_auc', n_jobs=3)
@@ -361,7 +366,7 @@ class SVMEval():
         x_train, y_train = train_data
         x_test, y_test = val_data
 
-        valid_classes = np.unique(get_labels(y_train))
+        valid_classes = np.unique(get_labels(y_train, n_labels=self.n_labels))
 
         if self.scale is True:
             scaler = StandardScaler()
@@ -373,7 +378,7 @@ class SVMEval():
             y_test = label_binarize(y_test, classes=list(valid_classes))
 
             val_acc = []
-            # val_auc = []
+            val_auc = []
             for cl in range(len(valid_classes)):
                 aux_acc = []
                 # aux_auc = []
@@ -393,8 +398,17 @@ class SVMEval():
                 # else:
                 #     raise NotImplementedError
                 self.acc_grid.fit(X=x_train, y=y_train[:, cl])
+                pred_on_val_cl_acc = self.acc_grid.predict(x_test)
+
+                if cl == 0:
+                    pred_on_val_acc = np.array(pred_on_val_cl_acc)[np.newaxis].T
+                else:
+                    pred_on_val_acc = np.append(pred_on_val_acc, np.array(pred_on_val_cl_acc)[np.newaxis].T, axis=1)
+
                 acc_on_val = self.acc_grid.score(x_test, y_test[:, cl])
-                aux_acc.append(acc_on_val)
+                print(pred_on_val_acc.shape)
+                val_acc.append(acc_on_val)
+                print(val_acc)
 
                 # if self.n_splits > 1:
                 #     # grid = GridSearchCV(LinearSVC(multi_class='ovr'),
@@ -410,13 +424,19 @@ class SVMEval():
                 # else:
                 #     raise NotImplementedError
                 # self.auc_grid.fit(X=x_train, y=y_train[:, cl])
+                # pred_on_val_cl_auc = self.auc_grid.predict(x_test)
+                #
+                # if cl == 0:
+                #     pred_on_val_auc = np.array(pred_on_val_cl_auc)[np.newaxis].T
+                # else:
+                #     pred_on_val_auc = np.append(pred_on_val_auc, np.array(pred_on_val_cl_auc)[np.newaxis].T, axis=1)
                 # auc_on_val = self.auc_grid.score(x_test, y_test[:, cl])
                 # aux_auc.append(auc_on_val)
 
-                val_acc.append(np.mean(aux_acc))
+                # val_acc.append(np.mean(aux_acc))
                 # val_auc.append(np.mean(aux_auc))
 
-            return val_acc, valid_classes  # val_auc,
+            return val_acc, pred_on_val_acc, valid_classes  # val_auc,
 
         else:
             val_acc = []

@@ -48,14 +48,16 @@ def parse_args():
                           required=True)
     parser_b.add_argument('--ex_mode', type=str, default='training',
                           choices=['training', 'feat_extraction',
-                                   'eval_all'],
+                                   'train'],
                           help='Execution mode: training, feature '
-                               'extraction or eval_all.',
+                               'extraction or train.',
                           required=True)
+    parser_b.add_argument('--model_load_type', type=str, default='latest',
+                          help='When loading a model, get latest model or best training accuracy model.')
 
     # DATASET
     parser_b.add_argument('--dataset_name', type=str, default='bouncingMNIST',
-                          choices=['bouncingMNIST', 'KTH', 'UCF101'],
+                          choices=['bouncingMNIST', 'KTH', 'UCF101', 'YUP'],
                           help='Dataset used for training and validation',
                           required=True)
     parser_b.add_argument('--class_velocity', action='store_true',
@@ -66,6 +68,8 @@ def parse_args():
                           help='Replaces digits with a square when '
                                'using bouncingMNIST dataset. Ignored '
                                'otherwise.')
+    parser_b.add_argument('--step_length', type=np.float32, default=0.1,
+                          help='Step size used for BouncingMNIST random path generation. Defaults to 0.1.')
     parser_b.add_argument('--tr_size', type=np.int64, default=12800,
                           help='Size of training dataset')
     parser_b.add_argument('--val_size', type=np.int64, default=5120,
@@ -133,6 +137,8 @@ def parse_args():
                                'configuration files')
 
     # HARDWARE
+    parser_b.add_argument('--gpu', action='store_true',
+                          help='Use GPU')
     parser_b.add_argument('--gpu_id', type=str, default='0',
                           help='GPU ID used to run the experiment')
 
@@ -160,9 +166,11 @@ def read_config_file(path):
                    'model_name': '',
                    'model_type': 'c3d_ae_small',
                    'ex_mode': 'training',
+                   'model_load_type': 'latest',
                    'dataset_name': 'bouncingMNIST',
                    'class_velocity': False,
                    'hide_digits': False,
+                   'step_length': 0.1,
                    'tr_size': 12800,
                    'val_size': 5120,
                    'use_batch_norm': False,
@@ -183,6 +191,7 @@ def read_config_file(path):
                    'plt_dir': '_outputs/{}/plots',
                    'model_dir': '_outputs/{}/models',
                    'config_dir': '_outputs/{}/configs',
+                   'gpu': False,
                    'gpu_id': '0'}
 
         def __init__(self, config, parse=True):
@@ -207,6 +216,10 @@ def read_config_file(path):
                 self.ex_mode = parse_value_or_get_default(config.get,
                                                           'MODEL',
                                                           'ex_mode')
+                self.model_load_type = \
+                    parse_value_or_get_default(config.get,
+                                               'MODEL',
+                                               'model_load_type')
 
                 # DATASET
                 self.dataset_name = parse_value_or_get_default(config.get,
@@ -220,6 +233,10 @@ def read_config_file(path):
                     parse_value_or_get_default(config.getboolean,
                                                'DATASET',
                                                'hide_digits')
+                self.step_length = \
+                    parse_value_or_get_default(config.getfloat,
+                                               'DATASET',
+                                               'step_length')
                 self.tr_size = parse_value_or_get_default(config.getint,
                                                           'DATASET', 'tr_size')
                 self.val_size = parse_value_or_get_default(config.getint,
@@ -299,6 +316,8 @@ def read_config_file(path):
                                                              'config_dir')
 
                 # HARDWARE
+                self.gpu = parse_value_or_get_default(config.getboolean,
+                                                      'HARDWARE', 'gpu')
                 self.gpu_id = parse_value_or_get_default(config.get,
                                                          'HARDWARE', 'gpu_id')
             else:
@@ -306,11 +325,13 @@ def read_config_file(path):
                 self.model_name = args.model_name
                 self.model_type = args.model_type
                 self.ex_mode = args.ex_mode
+                self.model_load_type = args.model_load_type
 
                 # DATASET
                 self.dataset_name = args.dataset_name
                 self.class_velocity = args.class_velocity
                 self.hide_digits = args.hide_digits
+                self.step_length = args.step_length
                 self.tr_size = args.tr_size
                 self.val_size = args.val_size
 
@@ -345,6 +366,7 @@ def read_config_file(path):
                 self.config_dir = args.config_dir
 
                 # HARDWARE
+                self.gpu = args.gpu
                 self.gpu_id = args.gpu_id
 
         def generate_config_file(self, path):
@@ -353,11 +375,13 @@ def read_config_file(path):
             self.config['MODEL'] = {'model_id': self.model_id,
                                     'model_name': self.model_name,
                                     'model_type': self.model_type,
-                                    'ex_mode': self.ex_mode}
+                                    'ex_mode': self.ex_mode,
+                                    'model_load_type': self.model_load_type}
 
             self.config['DATASET'] = {'dataset_name': self.dataset_name,
                                       'class_velocity': self.class_velocity,
                                       'hide_digits': self.hide_digits,
+                                      'step_length': self.step_length,
                                       'tr_size': self.tr_size,
                                       'val_size': self.val_size}
 
@@ -388,7 +412,8 @@ def read_config_file(path):
                                           'model_dir': self.model_dir,
                                           'config_dir': self.config_dir}
 
-            self.config['HARDWARE'] = {'gpu_id': self.gpu_id}
+            self.config['HARDWARE'] = {'gpu': self.gpu,
+                                       'gpu_id': self.gpu_id}
 
             self.config.write(open(path, 'w'))
 
@@ -418,12 +443,16 @@ def check_args(args):
         'r3d_clf_small, r3d_clf_large, ' \
         'r21d_clf_small, r21d_clf_large.'
 
-    assert args.ex_mode in ['training', 'feat_extraction', 'eval_all'], \
+    assert args.model_load_type in ['latest', 'best'], \
+        'invalid model_load_type. model_load_type must be one of the following: ' \
+        'latest, best.'
+
+    assert args.ex_mode in ['training', 'feat_extraction', 'train'], \
         'invalid ex_mode. ex_mode must be one of the following: ' \
         'training, feat_extraction.' \
 
     # DATASET
-    assert args.dataset_name in ['bouncingMNIST', 'KTH', 'UCF101'], \
+    assert args.dataset_name in ['bouncingMNIST', 'KTH', 'UCF101', 'YUP'], \
         'invalid dataset_name. dataset_name must be one of the following: ' \
         'bouncingMNIST.'
     assert args.tr_size > 0, 'tr_size must be greater than 0.'
