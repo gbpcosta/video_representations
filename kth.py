@@ -18,8 +18,8 @@ class KTHDataGenerator(keras.utils.Sequence):
                  image_size=64, shuffle=True,
                  frame_skip=1, to_gray=False,
                  split='train', random_seed=42, ae=False, noise=False,
-                 kth_path='/store/gbpcosta/KTH'):
-        if not os.path.exists(os.path.join(kth_path, 'data', 'frames')):
+                 data_path='KTH'):
+        if not os.path.exists(os.path.join(data_path, 'data', 'frames')):
             print('KTH folder must contain extracted frames for each video'
                   ' considering the following organisation: data/frames'
                   '/<class>/<video_name>/%04d.jpg.')
@@ -34,23 +34,23 @@ class KTHDataGenerator(keras.utils.Sequence):
         self.shuffle_ = shuffle
         self.ae_ = ae
         self.noise_ = noise
-        self.frames_path = os.path.join(kth_path, 'data', 'frames')
+        self.frames_path = os.path.join(data_path, 'data', 'frames')
 
         if self.split == 'train_validation':
             self.dataset_size_ = self.DATASET_SIZE['train'] \
                 + self.DATASET_SIZE['validation']
-            aux = pd.read_csv(os.path.join(kth_path,
+            aux = pd.read_csv(os.path.join(data_path,
                                            'train.txt'),
                               sep='_|\t|-|,', header=None, index_col=False)
 
-            aux2 = pd.read_csv(os.path.join(kth_path,
+            aux2 = pd.read_csv(os.path.join(data_path,
                                             'validation.txt'),
                                sep='_|\t|-|,', header=None, index_col=False)
 
             aux = pd.concat([aux, aux2], axis=0, ignore_index=True)
         else:
             self.dataset_size_ = self.DATASET_SIZE[self.split]
-            aux = pd.read_csv(os.path.join(kth_path,
+            aux = pd.read_csv(os.path.join(data_path,
                                            '{}.txt'.format(self.split)),
                               sep='_|\t|-|,', header=None, index_col=False)
 
@@ -80,7 +80,7 @@ class KTHDataGenerator(keras.utils.Sequence):
 
     def __len__(self):
         'Denotes the number of batches per epoch'
-        return int(self.dataset_size_ // self.batch_size_)
+        return int(np.ceil(self.dataset_size_ / self.batch_size_))
 
     def get_dims(self):
         return self.image_size_
@@ -181,11 +181,11 @@ class KTHDataGenerator(keras.utils.Sequence):
                 axis=1)
 
         # minibatch data
-        data = np.zeros((self.batch_size_, self.seq_length_,
+        data = np.zeros((batch_info.shape[0], self.seq_length_,
                          self.image_size_, self.image_size_, 1),
                         dtype=np.float32)
-        labels = np.zeros((self.batch_size_, self.seq_length_, self.n_classes),
-                          dtype=np.float32)
+        labels = np.zeros((batch_info.shape[0], self.seq_length_,
+                           self.n_classes), dtype=np.float32)
 
         for ii, sample in enumerate(batch_info.iterrows()):
             sample_frame_paths = \
@@ -212,7 +212,7 @@ class KTHDataGenerator(keras.utils.Sequence):
 
             data[ii] = aux
             labels[ii, :, np.where(self.class_dict
-                                   == batch_info['class'].iloc[ii])] = 1
+                                   == batch_info['class'].iloc[ii])[0]] = 1
 
         if self.ae_ is True:
             labels = labels[:, 0]
@@ -267,7 +267,6 @@ class KTHDataGenerator(keras.utils.Sequence):
             plt.axis('off')
         plt.draw()
         if output_file1 is not None:
-            print(output_file1)
             plt.savefig(output_file1, bbox_inches='tight')
 
         # create figure for reconstuction and future sequences
@@ -287,7 +286,6 @@ class KTHDataGenerator(keras.utils.Sequence):
 
         plt.draw()
         if output_file2 is not None:
-            print(output_file2)
             plt.savefig(output_file2, bbox_inches='tight')
         else:
             plt.pause(0.1)

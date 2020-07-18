@@ -16,8 +16,7 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
                  dataset_size=32000, image_size=64, digit_size=28, class_velocity=False, hide_digits=False,
                  num_digits=2, step_length=0.1, shuffle=True,
                  split='train', random_seed=42, ae=False, noise=False,
-                 mnist_path='/store/gbpcosta/google_drive/PhD/'
-                            'video_representations/datasets/mnist/mnist.h5'):
+                 mnist_path='datasets/mnist/mnist.h5'):
         self.seq_length_ = seq_length
         self.batch_size_ = batch_size
         self.num_digits_ = num_digits
@@ -32,6 +31,8 @@ class BouncingMNISTDataGenerator(keras.utils.Sequence):
         self.shuffle_ = shuffle
         self.ae_ = ae
         self.noise_ = noise
+        self.n_classes = 10
+        self.n_labels = num_digits
 
         try:
             f = h5py.File(mnist_path, 'r')

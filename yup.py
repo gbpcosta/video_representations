@@ -6,20 +6,28 @@ import matplotlib.pyplot as plt
 import keras
 from glob import glob
 
+"""
+    ************** Inverted version of 10_90_randsplit_1 **************
+    Original version has very few training samples and bigger test splits.
+"""
 
-class UCF101DataGenerator(keras.utils.Sequence):
-    """Data Handler that loads UCF101 dataset on the fly."""
+class YUPDataGenerator(keras.utils.Sequence):
+    """Data Handler that loads YUP++ dataset on the fly."""
 
-    DATASET_SIZE = {'train': 28747,
-                    'test': 11213}
+    DATASET_SIZE = {'train': 1080,
+                    'test': 120,
+                    'static_train': 540,
+                    'static_test': 60,
+                    'moving_train': 540,
+                    'static_train': 60}
 
     def __init__(self, seq_length=16, batch_size=32,
                  image_size=64, shuffle=True,
                  frame_skip=1, to_gray=False,
                  split='train', random_seed=42, ae=False, noise=False,
-                 data_path='UCF101'):
+                 data_path='Yup++'):
         if not os.path.exists(os.path.join(data_path, 'data', 'frames')):
-            print('UCF101 folder must contain extracted frames for each video'
+            print('Yup++ folder must contain extracted frames for each video'
                   ' considering the following organisation: data/frames'
                   '/<class>/<video_name>/%05d.jpg.')
 
@@ -33,36 +41,23 @@ class UCF101DataGenerator(keras.utils.Sequence):
         self.shuffle_ = shuffle
         self.ae_ = ae
         self.noise_ = noise
-        self.class_dict = \
-            pd.read_csv(os.path.join(data_path, 'classInd.txt'),
-                        sep=' ', header=None, index_col=0)
 
         self.frames_path = os.path.join(data_path, 'data', 'frames')
+        self.class_dict = \
+            pd.Series(os.listdir(os.path.join(self.frames_path, 'static')))
 
-        if self.split == 'train':
-            columns = ['class_name', 'video_file', 'class_id']
-        elif self.split == 'test':
-            columns = ['class_name', 'video_file']
-        else:
-            raise NotImplementedError
+        columns = ['video_file', 'type']
+        self.split_info = \
+            pd.read_csv(os.path.join(data_path, '10_90_randsplit_1.txt'),
+                        sep=' ', header=None)
+        self.split_info.columns = columns
+        self.split_info = \
+            self.split_info[self.split_info['type'].str.find(self.split) != -1]
 
-        self.split_info = pd.DataFrame([], columns=columns)
-        for ii in range(1, 4):
-            aux = pd.read_csv(
-                os.path.join(data_path,
-                             '{0}list{1:02d}.txt'.format(self.split, ii)),
-                sep=' |/', header=None, index_col=False)
-
-            aux.columns = columns
-            self.split_info = pd.concat([self.split_info, aux],
-                                        axis=0, ignore_index=True)
-
-        self.split_info['video_name'] = \
-            self.split_info['video_file'].apply(lambda x: x.rstrip('.avi'))
+        self.split_info['class_name'] = \
+            self.split_info['video_file'].apply(lambda x: x.split('_')[0])
 
         self.dataset_size_ = self.split_info.shape[0]
-        # self.DATASET_SIZE[self.split]
-
         self.n_classes = self.class_dict.shape[0]
         self.n_labels = 1
 
@@ -150,8 +145,9 @@ class UCF101DataGenerator(keras.utils.Sequence):
 
         def get_last_frame_id(video_info):
             id = len(glob(os.path.join(self.frames_path,
+                                       video_info['type'].split('_')[0],
                                        video_info['class_name'],
-                                       video_info['video_name'],
+                                       video_info['video_file'],
                                        '*.jpg')))
             return id
 
@@ -164,12 +160,8 @@ class UCF101DataGenerator(keras.utils.Sequence):
                 axis=1)
 
         # minibatch data
-        if self.to_gray:
-            n_channels = 1
-        else:
-            n_channels = 3
         data = np.zeros((batch_info.shape[0], self.seq_length_,
-                         self.image_size_, self.image_size_, n_channels),
+                         self.image_size_, self.image_size_, 1),
                         dtype=np.float32)
         labels = np.zeros((batch_info.shape[0], self.seq_length_,
                            self.n_classes), dtype=np.float32)
@@ -178,8 +170,9 @@ class UCF101DataGenerator(keras.utils.Sequence):
             sample_frame_paths = \
                 map(lambda x:
                     os.path.join(self.frames_path,
+                                 batch_info['type'].iloc[ii].split('_')[0],
                                  batch_info['class_name'].iloc[ii],
-                                 batch_info['video_name'].iloc[ii],
+                                 batch_info['video_file'].iloc[ii],
                                  '{:05d}.jpg'.format(x)),
                     range(batch_first_frames.iloc[ii],
                           batch_first_frames.iloc[ii]
@@ -199,8 +192,9 @@ class UCF101DataGenerator(keras.utils.Sequence):
                 for fname in sample_frame_paths])
 
             data[ii] = aux
-            labels[ii, :, np.where(self.class_dict
-                                   == batch_info['class_name'].iloc[ii])[0]] = 1
+            labels[ii, :,
+                   np.where(self.class_dict
+                            == batch_info['class_name'].iloc[ii])[0]] = 1
 
         if self.ae_ is True:
             labels = labels[:, 0]
@@ -215,6 +209,7 @@ class UCF101DataGenerator(keras.utils.Sequence):
             return (data, labels)
         else:
             labels = labels[:, 0]
+
             return (data, labels)
 
     def __getitem__(self, index):
